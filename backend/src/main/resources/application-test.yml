@@ -4,3 +4,24 @@ spring:
   jpa:
     hibernate:
       ddl-auto: validate
+
+app:
+  jwt:
+    # Deterministic 64-byte secret for tests only. Real deployments inject
+    # JWT_SECRET via environment.
+    secret: "test-secret-test-secret-test-secret-test-secret-test-secret-test"
+  cookie:
+    secure: false
+  auth:
+    # Lower BCrypt cost so tests stay fast; production keeps cost 12+.
+    bcrypt-strength: 4
+  rate-limit:
+    login:
+      capacity: 1000
+      refill-period: PT1M
+    register:
+      capacity: 1000
+      refill-period: PT1M
+    refresh:
+      capacity: 1000
+      refill-period: PT1M

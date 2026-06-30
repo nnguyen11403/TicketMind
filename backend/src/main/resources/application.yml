@@ -52,6 +52,43 @@ management:
     env:
       enabled: false
 
+app:
+  jwt:
+    # Must be at least 32 bytes (256 bits) when decoded. Generate with:
+    #   openssl rand -base64 64
+    secret: ${JWT_SECRET}
+    issuer: ticketmind
+    audience: ticketmind-app
+    access-token-ttl: PT${JWT_ACCESS_TOKEN_TTL_MINUTES:15}M
+    refresh-token-ttl: P${JWT_REFRESH_TOKEN_TTL_DAYS:14}D
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000}
+  auth:
+    # BCrypt cost factor. 12 is the 2026 baseline; raise as hardware improves.
+    bcrypt-strength: 12
+    # Password minimum length per OWASP modern guidance (no complexity rules).
+    password-min-length: 12
+    # Account lockout: lock after N failed attempts for T minutes.
+    max-failed-attempts: 5
+    lockout-duration: PT15M
+  cookie:
+    # Must be true in production (cookie only sent over HTTPS). Override to
+    # false in the dev profile to allow local http://localhost testing.
+    secure: true
+    same-site: Strict
+  rate-limit:
+    # Per-IP buckets sized for the expected human-traffic shape on auth
+    # endpoints. Swap for Redis-backed buckets in multi-instance deploys.
+    login:
+      capacity: 5
+      refill-period: PT5M
+    register:
+      capacity: 3
+      refill-period: PT1H
+    refresh:
+      capacity: 60
+      refill-period: PT1H
+
 logging:
   level:
     root: INFO

@@ -4,6 +4,11 @@ spring:
       hibernate:
         format_sql: true
 
+app:
+  cookie:
+    # Local dev runs over http://, so Secure cookies would be dropped.
+    secure: false
+
 logging:
   level:
     com.ticketmind: DEBUG

@@ -48,7 +48,7 @@ CREATE TABLE refresh_tokens (
     revoked_at      TIMESTAMPTZ,
     replaced_by_id  UUID         REFERENCES refresh_tokens(id) ON DELETE SET NULL,
     user_agent      VARCHAR(512),
-    ip_address      INET
+    ip_address      VARCHAR(45)
 );
 
 CREATE INDEX idx_refresh_tokens_user_id ON refresh_tokens(user_id);

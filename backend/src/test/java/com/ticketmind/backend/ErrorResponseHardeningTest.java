@@ -23,19 +23,21 @@ class ErrorResponseHardeningTest {
 	private MockMvc mockMvc;
 
 	@Test
-	void notFoundResponseDoesNotLeakStackTrace() throws Exception {
+	void unknownRouteDoesNotLeakStackTrace() throws Exception {
+		// Unauthenticated access to any unmapped route hits the auth wall first
+		// (401) — the secure default. The sanitized error body still applies.
 		mockMvc.perform(get("/does-not-exist").accept(MediaType.APPLICATION_JSON))
-				.andExpect(status().isNotFound())
+				.andExpect(status().isUnauthorized())
 				.andExpect(jsonPath("$.trace").doesNotExist())
 				.andExpect(jsonPath("$.exception").doesNotExist());
 	}
 
 	@Test
-	void notFoundResponseDoesNotLeakInternalMessage() throws Exception {
+	void unknownRouteDoesNotLeakInternalMessage() throws Exception {
 		// include-message=never causes Spring to omit the field entirely,
 		// which is stronger than emitting an empty string.
 		mockMvc.perform(get("/does-not-exist").accept(MediaType.APPLICATION_JSON))
-				.andExpect(status().isNotFound())
+				.andExpect(status().isUnauthorized())
 				.andExpect(jsonPath("$.message").doesNotExist())
 				.andExpect(jsonPath("$.errors").doesNotExist())
 				.andExpect(jsonPath("$.path").doesNotExist());
