@@ -1,0 +1,58 @@
+# Root docker-compose for local development.
+# Subsequent feature branches add backend, rag-service, and frontend services.
+# Until then, this brings up Postgres + pgvector for the backend to develop against.
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: ticketmind-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # backend:
+  #   build: ./backend
+  #   depends_on:
+  #     postgres: { condition: service_healthy }
+  #   environment:
+  #     SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
+  #     SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
+  #     SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
+  #     JWT_SECRET: ${JWT_SECRET}
+  #     RAG_SERVICE_URL: http://rag-service:8000
+  #     RAG_INTERNAL_API_KEY: ${RAG_INTERNAL_API_KEY}
+  #   ports:
+  #     - "${BACKEND_PORT:-8080}:8080"
+
+  # rag-service:
+  #   build: ./rag-service
+  #   depends_on:
+  #     postgres: { condition: service_healthy }
+  #   environment:
+  #     ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+  #     VOYAGE_API_KEY: ${VOYAGE_API_KEY}
+  #     DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+  #     RAG_INTERNAL_API_KEY: ${RAG_INTERNAL_API_KEY}
+  #   ports:
+  #     - "${RAG_SERVICE_PORT:-8000}:8000"
+
+  # frontend:
+  #   build: ./frontend
+  #   depends_on:
+  #     - backend
+  #   ports:
+  #     - "${FRONTEND_PORT:-3000}:80"
+
+volumes:
+  postgres_data:
