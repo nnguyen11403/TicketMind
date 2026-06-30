@@ -32,8 +32,12 @@ class ErrorResponseHardeningTest {
 
 	@Test
 	void notFoundResponseDoesNotLeakInternalMessage() throws Exception {
+		// include-message=never causes Spring to omit the field entirely,
+		// which is stronger than emitting an empty string.
 		mockMvc.perform(get("/does-not-exist").accept(MediaType.APPLICATION_JSON))
 				.andExpect(status().isNotFound())
-				.andExpect(jsonPath("$.message").value(""));
+				.andExpect(jsonPath("$.message").doesNotExist())
+				.andExpect(jsonPath("$.errors").doesNotExist())
+				.andExpect(jsonPath("$.path").doesNotExist());
 	}
 }
