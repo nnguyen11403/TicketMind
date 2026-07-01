@@ -15,9 +15,9 @@ Work is shipped one feature branch at a time off `main`. Each step is a separate
 | 1. Project scaffolding | `feature/scaffold` | merged |
 | 2. Spring Boot backend bootstrap | `feature/backend-bootstrap` | merged |
 | 3. Flyway schema (V1 core, V2 pgvector) | `feature/db-schema` | merged |
-| 4. Auth (JWT + BCrypt + refresh rotation) | `feature/auth` | **pushed, 58/58 tests green** |
-| 5. Ticket CRUD API | `feature/ticket-crud` | **in progress, uncommitted** |
-| 6. React frontend bootstrap | — | pending |
+| 4. Auth (JWT + BCrypt + refresh rotation) | `feature/auth` | pushed, 58/58 tests green |
+| 5. Ticket CRUD API | `feature/ticket-crud` | pushed, 68/68 tests green |
+| 6. React frontend bootstrap | `feature/frontend-bootstrap` | **in progress, uncommitted, 12/12 vitest green** |
 | 7. Ticket UI | — | pending |
 | 8. Python RAG service | — | pending |
 | 9. Backend ↔ RAG wiring | — | pending |
@@ -42,9 +42,18 @@ cd backend && ./mvnw test -B -ntp -Dtest=AuthFlowIntegrationTest#registerLoginRe
 cd backend && ./mvnw test -B -ntp -Dtest=<Class>#<method> \
     -Dlogging.level.org.hibernate.SQL=DEBUG \
     -Dlogging.level.org.springframework.transaction=TRACE
+
+# Frontend (needs VITE_API_BASE_URL — copy frontend/.env.example → .env)
+cd frontend && npm install
+cd frontend && npm run dev          # vite dev server on :3000
+cd frontend && npm run build        # tsc -b && vite build
+cd frontend && npm test             # vitest run (jsdom + MSW)
+cd frontend && npm run typecheck    # tsc -b --noEmit
+cd frontend && npm run lint         # oxlint src
+cd frontend && npm run format       # prettier --write
 ```
 
-The frontend and RAG service haven't been built yet — no commands for them.
+The RAG service hasn't been built yet — no commands for it.
 
 ## Tech stack (as actually built)
 
@@ -55,7 +64,8 @@ The frontend and RAG service haven't been built yet — no commands for them.
 - **Bucket4j 8.10.1** for per-IP rate limiting
 - **Flyway** with `ddl-auto=validate` (entities must match V1/V2 exactly)
 - **JPA Auditing** for `created_at` / `updated_at`
-- Frontend (planned): Vite + React + TypeScript
+- **React 19 + TypeScript 6 + Vite 8** frontend with React Router v7, TanStack Query v5, React Hook Form + Zod, Tailwind CSS v4
+- Frontend tests: Vitest 3 + Testing Library + MSW 2 (jsdom); MSW's `onUnhandledRequest: 'error'` catches missing handlers
 - RAG service (planned): Python + FastAPI + LangChain + Anthropic Claude
 
 ## Architecture decisions baked in
@@ -86,6 +96,22 @@ These are non-obvious choices that future code must keep consistent.
 - `JwtAuthenticationFilter` reads `Authorization: Bearer <token>` and seats a `JwtPrincipal(id, email, role)` as the `Authentication.principal`. Use `@AuthenticationPrincipal JwtPrincipal principal` in controllers.
 - `@EnableMethodSecurity` is on; method-level `@PreAuthorize("hasRole('AGENT')")` etc. works.
 
+**Frontend (step 6):**
+
+- Access token lives in module memory only (`src/api/tokenStore.ts`) — never in localStorage/sessionStorage. XSS should not be able to harvest a persistent credential. Refresh survives page reload because the backend's HttpOnly `tm_refresh` cookie is still valid; the app performs a silent `/auth/refresh` on mount (`AuthProvider`).
+- `apiFetch` (`src/api/client.ts`) attaches `Authorization: Bearer …` when a token exists, transparently refreshes-and-retries **once** on 401, and clears the token when refresh itself fails. Concurrent refreshes are serialised into a single in-flight promise — many stale requests firing at once would otherwise walk into the backend's family-revocation trap.
+- Auth endpoints use `skipAuth: true` so `/auth/login`/`/auth/register`/`/auth/refresh` never recurse through the 401-refresh path.
+- API errors are decoded through the backend's `{ status, code, fieldErrors? }` envelope into an `ApiError` class; user-facing copy is centralised in `src/lib/errorMessages.ts` (keyed by `code`, never showing raw messages). `Retry-After` seconds land on `ApiError.retryAfterSeconds` for rate-limit UI.
+- Form validation mirrors the backend rules with Zod (via React Hook Form + `@hookform/resolvers/zod`). The registration form's 12-char + letter + digit check exists so users see feedback before the network round-trip; the backend still enforces it.
+- The Prod SPA is served from Vite's `dist/`. In dev, the Vite server runs on `:3000` (matching `CORS_ALLOWED_ORIGINS` in `.env.example`); the Spring backend runs on `:8080`.
+
+**Frontend test conventions:**
+
+- `vitest.config.ts` is separate from `vite.config.ts` because Vitest 3 still bundles a Vite 5 API — the React plugin type from Vite 8 conflicts, so `vitest.config.ts` casts `react()` to `never`. This is intentional; both configs work at runtime.
+- MSW handlers must be registered per-test with `server.use(...)`. Global setup uses `onUnhandledRequest: 'error'` — any un-mocked request fails loudly. `tokenStore.clear()` runs in `afterEach`.
+- `renderWithProviders` (`src/test/renderApp.tsx`) wraps in `MemoryRouter` + `QueryClientProvider` + `AuthProvider`. `AuthProvider` fires a silent `/auth/refresh` on mount, so tests must mock that endpoint (return 401 for anonymous state).
+- `.env.test` sets `VITE_API_BASE_URL=http://api.test` — MSW handlers key off that same base.
+
 ## Test conventions
 
 - **Integration tests use Testcontainers, not mocks.** The `TestcontainersConfiguration` spins up a real pgvector container; tests like `AuthFlowIntegrationTest` hit the real DB. Do **not** introduce `@MockBean` on repositories — the original CLAUDE.md guidance to mock the DB is superseded.
@@ -108,39 +134,22 @@ These are non-obvious choices that future code must keep consistent.
 - Each PR is a single coherent slice — the auth branch is large because the slice is large, not because changes are batched.
 - Don't `--no-verify`, don't force-push. If a hook fails, fix the underlying issue.
 
-## Where step 5 (ticket CRUD) left off
+## Where step 6 (React frontend bootstrap) left off
 
-`feature/ticket-crud` is checked out with uncommitted work. **Built so far:**
+`feature/frontend-bootstrap` is checked out with uncommitted work. **Shipped:**
 
-- `ticket/` package: `Ticket`, `TicketHistory`, `TicketStatus`, `TicketPriority`, `TicketHistoryEventType`, `TicketRepository`, `TicketHistoryRepository`.
-- All ticket DTOs under `ticket/dto/`: `CreateTicketRequest`, `UpdateTicketRequest`, `AssignTicketRequest`, `ChangeStatusRequest`, `AddCommentRequest`, `TicketResponse`, `TicketSummaryResponse`, `TicketHistoryResponse`, `UserSummary`, `PagedResponse`.
-- `TicketService` — full authorisation logic. Role rules:
-  - USERs only see their own tickets; staff (AGENT/ADMIN) see all.
-  - "Not authorised" surfaces as **404, not 403** to prevent ID enumeration (`assertCanRead`).
-  - Submitters can edit body only while ticket is OPEN; can self-close OPEN tickets; cannot change any other status.
-  - Only staff can assign. Assignee must be AGENT or ADMIN (active) or `null` to unassign — enforced by `AgentRequiredException`.
-  - Every mutation writes a `TicketHistory` row (CREATED, UPDATED, STATUS_CHANGED, RESOLVED, REOPENED, ASSIGNED, COMMENT, TRIAGED). The payload is JSON-serialised via `ObjectMapper`.
-- New exceptions: `TicketNotFoundException` (404), `InvalidTicketStateException` (409), `AgentRequiredException` (400).
-- `AuthException` was renamed to `ApiException`; all 6 existing exception subclasses and `GlobalExceptionHandler` were migrated.
+- `frontend/` scaffolded with Vite 8 + React 19 + TypeScript 6 (strict) and Tailwind CSS v4 via `@tailwindcss/vite`.
+- `src/api/` — `client.ts` (fetch wrapper + refresh-and-retry), `auth.ts` (login/register/refresh/logout), `errors.ts` (Zod-validated envelope), `tokenStore.ts` (in-memory access-token store with subscribers).
+- `src/auth/` — `AuthContext.tsx` / `authContextValue.ts` split so the context lives in a non-component module (satisfies oxlint fast-refresh rule); `useAuth`; `ProtectedRoute` that supports optional `roles` gating and redirects to `/login` (preserving `location.pathname` in nav state so the login page can round-trip back).
+- `src/pages/` — `LoginPage`, `RegisterPage` (both use React Hook Form + Zod), `HomePage` (placeholder for step 7), `NotFoundPage`.
+- `src/components/` — `AppShell` (nav + logout), `FormField` (label/input/error/hint reusable field).
+- `src/lib/env.ts` reads `VITE_API_BASE_URL` and throws at import time if missing.
+- Testing: Vitest + MSW handlers per test; `renderWithProviders` in `src/test/renderApp.tsx` wraps in `MemoryRouter` + `QueryClientProvider` + `AuthProvider`. `src/test/setup.ts` runs `onUnhandledRequest: 'error'`. `.env.test` sets `VITE_API_BASE_URL=http://api.test`.
+- 12/12 vitest green covering: refresh-and-retry (single, concurrent, and failure paths), error-envelope decoding, login success/failure/validation, and `ProtectedRoute` for authenticated / anonymous / wrong-role cases.
 
-**Still TODO on step 5:**
+**Still TODO to close step 6:** commit + push `feature/frontend-bootstrap`.
 
-1. `TicketController` REST endpoints:
-   - `POST   /tickets`              — submit (any authed user)
-   - `GET    /tickets/{id}`         — read one (authz in service)
-   - `GET    /tickets?status=&page=&size=` — list, paged
-   - `PATCH  /tickets/{id}`         — update body
-   - `POST   /tickets/{id}/status`  — change status
-   - `POST   /tickets/{id}/assign`  — staff-only
-   - `POST   /tickets/{id}/comments`
-   - `GET    /tickets/{id}/history`
-2. Make `Ticket.applyTriage(...)` callable from the eventual RAG callback path (step 9) — leave a public method on the service that's role-gated to AGENT/ADMIN only, since the RAG webhook will authenticate as a service user.
-3. Tests under `src/test/java/com/ticketmind/backend/ticket/`:
-   - `TicketServiceTest` — authorisation matrix (USER vs AGENT vs ADMIN; own vs other ticket; status-transition rules).
-   - `TicketControllerIntegrationTest` — full HTTP flow including 404-on-unauthz, paging, history, comment.
-4. Run `./mvnw test`, confirm green, then commit + push `feature/ticket-crud`.
-
-**No new Flyway migration is needed** — the `tickets` and `ticket_history` tables are already in V1 and match the entities as written.
+**Ticket UI (step 7) will build on top of this:** create `src/api/tickets.ts` (list/get/create/patch/status/assign/comment/history — mirror the backend endpoints), add tickets pages under `src/pages/tickets/`, wire routes into `App.tsx` inside the existing `ProtectedRoute`. Use TanStack Query for server-cache invalidation on mutations; the query client is already set up in `main.tsx` with `staleTime: 30_000` and `refetchOnWindowFocus: false`.
 
 ## Out of scope
 
