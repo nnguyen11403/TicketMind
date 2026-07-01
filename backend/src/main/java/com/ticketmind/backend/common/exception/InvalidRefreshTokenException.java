@@ -2,7 +2,7 @@ package com.ticketmind.backend.common.exception;
 
 import org.springframework.http.HttpStatus;
 
-public final class InvalidRefreshTokenException extends AuthException {
+public final class InvalidRefreshTokenException extends ApiException {
 
 	public InvalidRefreshTokenException() {
 		super("invalid refresh token");

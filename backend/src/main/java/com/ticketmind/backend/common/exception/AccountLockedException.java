@@ -2,7 +2,7 @@ package com.ticketmind.backend.common.exception;
 
 import org.springframework.http.HttpStatus;
 
-public final class AccountLockedException extends AuthException {
+public final class AccountLockedException extends ApiException {
 
 	public AccountLockedException() {
 		super("account temporarily locked");

@@ -1,6 +1,6 @@
 package com.ticketmind.backend.common.web;
 
-import com.ticketmind.backend.common.exception.AuthException;
+import com.ticketmind.backend.common.exception.ApiException;
 import com.ticketmind.backend.common.exception.RateLimitExceededException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -19,8 +19,8 @@ public class GlobalExceptionHandler {
 
 	private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
-	@ExceptionHandler(AuthException.class)
-	public ResponseEntity<ApiError> handleAuth(AuthException ex) {
+	@ExceptionHandler(ApiException.class)
+	public ResponseEntity<ApiError> handleApi(ApiException ex) {
 		HttpHeaders headers = new HttpHeaders();
 		if (ex instanceof RateLimitExceededException rl) {
 			headers.add(HttpHeaders.RETRY_AFTER, Long.toString(rl.retryAfterSeconds()));

@@ -2,10 +2,10 @@ package com.ticketmind.backend.common.exception;
 
 import org.springframework.http.HttpStatus;
 
-public final class PasswordPolicyException extends ApiException {
+public final class AgentRequiredException extends ApiException {
 
-	public PasswordPolicyException(String reason) {
-		super(reason);
+	public AgentRequiredException() {
+		super("assignee must be an AGENT or ADMIN");
 	}
 
 	@Override
@@ -15,6 +15,6 @@ public final class PasswordPolicyException extends ApiException {
 
 	@Override
 	public String code() {
-		return "password_policy";
+		return "agent_required";
 	}
 }

@@ -2,7 +2,7 @@ package com.ticketmind.backend.common.exception;
 
 import org.springframework.http.HttpStatus;
 
-public final class RateLimitExceededException extends AuthException {
+public final class RateLimitExceededException extends ApiException {
 
 	private final long retryAfterSeconds;
 

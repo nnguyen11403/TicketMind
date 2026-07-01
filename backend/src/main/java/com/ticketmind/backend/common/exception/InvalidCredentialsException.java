@@ -6,7 +6,7 @@ import org.springframework.http.HttpStatus;
  * Surface a single generic error for "no such user" and "wrong password"
  * so attackers can't enumerate registered emails.
  */
-public final class InvalidCredentialsException extends AuthException {
+public final class InvalidCredentialsException extends ApiException {
 
 	public InvalidCredentialsException() {
 		super("invalid credentials");

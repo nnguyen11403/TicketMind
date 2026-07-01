@@ -2,10 +2,10 @@ package com.ticketmind.backend.common.exception;
 
 import org.springframework.http.HttpStatus;
 
-public final class EmailAlreadyExistsException extends ApiException {
+public final class InvalidTicketStateException extends ApiException {
 
-	public EmailAlreadyExistsException() {
-		super("email already registered");
+	public InvalidTicketStateException(String message) {
+		super(message);
 	}
 
 	@Override
@@ -15,6 +15,6 @@ public final class EmailAlreadyExistsException extends ApiException {
 
 	@Override
 	public String code() {
-		return "email_already_registered";
+		return "invalid_ticket_state";
 	}
 }
