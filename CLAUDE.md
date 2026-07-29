@@ -17,8 +17,8 @@ Work is shipped one feature branch at a time off `main`. Each step is a separate
 | 3. Flyway schema (V1 core, V2 pgvector) | `feature/db-schema` | merged |
 | 4. Auth (JWT + BCrypt + refresh rotation) | `feature/auth` | pushed, 58/58 tests green |
 | 5. Ticket CRUD API | `feature/ticket-crud` | pushed, 68/68 tests green |
-| 6. React frontend bootstrap | `feature/frontend-bootstrap` | **in progress, uncommitted, 12/12 vitest green** |
-| 7. Ticket UI | — | pending |
+| 6. React frontend bootstrap | `feature/frontend-bootstrap` | pushed, 12/12 vitest green |
+| 7. Ticket UI | `feature/ticket-ui` | **in progress, uncommitted, 21/21 vitest green** |
 | 8. Python RAG service | — | pending |
 | 9. Backend ↔ RAG wiring | — | pending |
 | 10. Full-stack docker-compose | — | pending |
@@ -134,22 +134,23 @@ These are non-obvious choices that future code must keep consistent.
 - Each PR is a single coherent slice — the auth branch is large because the slice is large, not because changes are batched.
 - Don't `--no-verify`, don't force-push. If a hook fails, fix the underlying issue.
 
-## Where step 6 (React frontend bootstrap) left off
+## Where step 7 (Ticket UI) left off
 
-`feature/frontend-bootstrap` is checked out with uncommitted work. **Shipped:**
+`feature/ticket-ui` is checked out with uncommitted work. **Shipped:**
 
-- `frontend/` scaffolded with Vite 8 + React 19 + TypeScript 6 (strict) and Tailwind CSS v4 via `@tailwindcss/vite`.
-- `src/api/` — `client.ts` (fetch wrapper + refresh-and-retry), `auth.ts` (login/register/refresh/logout), `errors.ts` (Zod-validated envelope), `tokenStore.ts` (in-memory access-token store with subscribers).
-- `src/auth/` — `AuthContext.tsx` / `authContextValue.ts` split so the context lives in a non-component module (satisfies oxlint fast-refresh rule); `useAuth`; `ProtectedRoute` that supports optional `roles` gating and redirects to `/login` (preserving `location.pathname` in nav state so the login page can round-trip back).
-- `src/pages/` — `LoginPage`, `RegisterPage` (both use React Hook Form + Zod), `HomePage` (placeholder for step 7), `NotFoundPage`.
-- `src/components/` — `AppShell` (nav + logout), `FormField` (label/input/error/hint reusable field).
-- `src/lib/env.ts` reads `VITE_API_BASE_URL` and throws at import time if missing.
-- Testing: Vitest + MSW handlers per test; `renderWithProviders` in `src/test/renderApp.tsx` wraps in `MemoryRouter` + `QueryClientProvider` + `AuthProvider`. `src/test/setup.ts` runs `onUnhandledRequest: 'error'`. `.env.test` sets `VITE_API_BASE_URL=http://api.test`.
-- 12/12 vitest green covering: refresh-and-retry (single, concurrent, and failure paths), error-envelope decoding, login success/failure/validation, and `ProtectedRoute` for authenticated / anonymous / wrong-role cases.
+- `src/api/tickets.ts` — Zod-validated list/get/create/update/status/assign/comment/history calls mirroring the backend `/tickets` surface.
+- `src/pages/tickets/` — `TicketListPage` (status-chip filter + Previous/Next pagination via `useSearchParams`), `TicketCreatePage` (RHF + Zod, redirects to detail on success), `TicketDetailPage` (grid layout with body, activity, and sidebar), `Timeline` (renders every event type, expanding STATUS_CHANGED into from → to and COMMENT into a styled block), `CommentComposer`, `StaffActions` (status dropdown + Take/Unassign — the assignee picker is intentionally self-assign only until a `/users` endpoint exists).
+- `src/components/` — `StatusBadge`, `PriorityBadge`.
+- `src/lib/` — `formatDate.ts` (Intl `RelativeTimeFormat` + medium/short date), `roles.ts` (`isStaff`).
+- `App.tsx` routes: `/` → `<Navigate to="/tickets" />`; `/tickets`, `/tickets/new`, `/tickets/:id` all inside the existing `ProtectedRoute` shell. `HomePage.tsx` was removed.
+- Ticket UI decisions:
+  - Cross-tenant 404s from the backend surface as the standard "not found" error message — the UI does not distinguish them from real 404s, matching the enumeration-resistance design in the service layer.
+  - Submitters see an edit affordance only while `status === 'OPEN'`; the edit form is inline (no separate route) because the ticket already loaded and the mutation is a single PATCH.
+  - Staff sidebar (`StaffActions`) invalidates both `['ticket', id]` and `['tickets']` on mutation so the list page stays in sync when navigated back.
+  - `formatError` code table gained `invalid_ticket_state`, `agent_required`, `not_found` for the ticket flow — new backend codes go here, not into ad-hoc UI strings.
+- 21/21 vitest green: list pagination + status filter + empty state, create form + validation, detail render for submitter/staff, inline edit, and "Take ticket" self-assignment.
 
-**Still TODO to close step 6:** commit + push `feature/frontend-bootstrap`.
-
-**Ticket UI (step 7) will build on top of this:** create `src/api/tickets.ts` (list/get/create/patch/status/assign/comment/history — mirror the backend endpoints), add tickets pages under `src/pages/tickets/`, wire routes into `App.tsx` inside the existing `ProtectedRoute`. Use TanStack Query for server-cache invalidation on mutations; the query client is already set up in `main.tsx` with `staleTime: 30_000` and `refetchOnWindowFocus: false`.
+**Still TODO to close step 7:** commit + push `feature/ticket-ui`.
 
 ## Out of scope
 

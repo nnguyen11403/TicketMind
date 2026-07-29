@@ -18,5 +18,25 @@ export default defineConfig({
     setupFiles: './src/test/setup.ts',
     css: false,
     include: ['src/**/*.{test,spec}.{ts,tsx}'],
+    coverage: {
+      // `main.tsx` is the bootstrap entry (ReactDOM.createRoot) — asserting
+      // it renders adds nothing over the App tests. `env.ts` throws at import
+      // time when misconfigured; runtime paths are covered by the tests that
+      // exercise the API base URL.
+      include: ['src/**/*.{ts,tsx}'],
+      exclude: [
+        'src/main.tsx',
+        'src/lib/env.ts',
+        'src/test/**',
+        '**/*.test.{ts,tsx}',
+        '**/*.d.ts',
+      ],
+      thresholds: {
+        statements: 80,
+        branches: 80,
+        functions: 80,
+        lines: 80,
+      },
+    },
   },
 });
