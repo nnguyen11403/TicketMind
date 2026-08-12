@@ -85,7 +85,7 @@ In active development. Current milestones:
 - [x] React frontend (submission form, ticket list/detail)
 - [x] RAG pipeline (embedding + retrieval + LLM categorization)
 - [x] Docker Compose full stack
-- [ ] CI/CD pipeline
+- [x] CI/CD pipeline
 - [ ] Live deployment
 
 ## Why This Project

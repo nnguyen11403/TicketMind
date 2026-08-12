@@ -81,14 +81,9 @@ services:
       RAG_EMBEDDING_MODEL: ${RAG_EMBEDDING_MODEL:-voyage-3}
     ports:
       - "${RAG_SERVICE_PORT:-8000}:8000"
-    healthcheck:
-      # curl is already in the image (the Dockerfile installs it for the build
-      # stage), so this needs no extra layer.
-      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/health || exit 1"]
-      interval: 15s
-      timeout: 5s
-      retries: 5
-      start_period: 15s
+    # Healthcheck comes from the image, as it does for backend and frontend.
+    # It uses the venv interpreter rather than curl, so the runtime stage needs
+    # no apt install at all.
 
   frontend:
     build:

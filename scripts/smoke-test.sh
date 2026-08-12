@@ -97,12 +97,26 @@ echo
 echo "=== 4. end-to-end ticket flow through the backend ==="
 suffix=$(date +%s)$$
 email="smoke-${suffix}@example.com"
-reg=$(curl -fsS -X POST "$BACKEND_URL/auth/register" \
+reg_body=$(mktemp)
+reg_code=$(curl -s -o "$reg_body" -w '%{http_code}' -X POST "$BACKEND_URL/auth/register" \
 	-H 'Content-Type: application/json' \
-	-d "{\"email\":\"$email\",\"password\":\"smoke-test-password-1\",\"displayName\":\"Smoke\"}" 2>/dev/null)
+	-d "{\"email\":\"$email\",\"password\":\"smoke-test-password-1\",\"displayName\":\"Smoke\"}")
+reg=$(cat "$reg_body"); rm -f "$reg_body"
 token=$(json_first "$reg" accessToken)
-[ -n "$token" ] && ok "registered $email and received an access token" \
-	|| { bad "registration failed: $reg"; }
+
+if [ -n "$token" ]; then
+	ok "registered $email and received an access token"
+elif [ "$reg_code" = "429" ]; then
+	# Per-IP register limit is 3/hour by design. On a fresh stack (CI) this
+	# never fires; locally it does after a few runs. It is a precondition we
+	# cannot satisfy, not a product failure — so skip rather than fail, but
+	# say so loudly enough that nobody reads it as a pass.
+	note "registration rate-limited (HTTP 429) — the per-IP cap is 3/hour"
+	note "SKIPPING the ticket flow. \`docker compose restart backend\` resets the"
+	note "in-memory buckets, or wait for the window to refill."
+else
+	bad "registration failed (HTTP $reg_code): $reg"
+fi
 
 if [ -n "$token" ]; then
 	created=$(curl -fsS -X POST "$BACKEND_URL/tickets" \

@@ -21,8 +21,8 @@ Work is shipped one feature branch at a time off `main`. Each step is a separate
 | 7. Ticket UI | `feature/ticket-ui` | pushed, 21/21 vitest green |
 | 8. Python RAG service | `feature/rag-service` | pushed, 41/41 pytest green (89% cov) |
 | 9. Backend ↔ RAG wiring | `feature/rag-wiring` | pushed, 91/91 backend + 67/67 vitest + 41/41 pytest green |
-| 10. Full-stack docker-compose | `feature/docker-compose` | pushed — 93 backend + 67 vitest + 41 pytest + 11/11 smoke |
-| 11. CI/CD GitHub Actions | — | **next** |
+| 10. Full-stack docker-compose | `feature/docker-compose` | pushed — 93 backend + 67 vitest + 41 pytest + 14/14 smoke |
+| 11. CI/CD GitHub Actions | `feature/docker-compose` | **in progress, uncommitted** — four-job workflow, all commands verified locally |
 
 **Anthropic API key — investigated 2026-08-12, not leaked via this repo.** An earlier note here claimed the key had been committed to `.env` and treated it as a blocker for step 9. That was wrong. Verified:
 
@@ -32,6 +32,10 @@ Work is shipped one feature branch at a time off `main`. Each step is a separate
 - GitHub secret scanning **and** push protection are enabled on this public repo and report no alerts, past or present. Anthropic is a scanning partner, so a real key in any pushed commit would have been flagged — and push protection would have refused the push in the first place.
 
 Residual risk is non-git only (pasted into a chat, a screenshot, a log). Rotation is still cheap insurance and the only action that actually neutralises a key; if you rotate, `.env` is the only file to update. Check Console usage history if you want to know whether it was ever used by anyone else.
+
+**The RAG pipeline is verified end-to-end (2026-08-12).** With real Anthropic + Voyage keys the full loop was observed working against the compose stack: ticket created → Claude returned `billing`/`HIGH` plus a usable multi-step resolution → resolving the ticket mirrored it into `kb_documents` (retrievable at 0.678 cosine) → a second, differently-worded ticket retrieved the first and cited its UUID. That was the last genuinely unproven claim in the project.
+
+**Product gap — no way to create an AGENT or ADMIN.** Registration always yields `USER`, and there is no admin endpoint, promotion flow, or seed. On a fresh deployment nobody can use any staff feature (status changes beyond a submitter self-close, assignment, the staff sidebar) without `UPDATE users SET role='AGENT'` straight in Postgres. Found while exercising the compose stack. Needs its own slice before any deployment.
 
 ## Commands
 
@@ -132,6 +136,14 @@ These are non-obvious choices that future code must keep consistent.
 - nginx serves the SPA with a `try_files … /index.html` fallback, so a deep link like `/tickets/<uuid>` survives a refresh. `/assets/` is immutable-cached (Vite content-hashes those names) while `index.html` is `no-cache` — cache index.html and browsers never learn to ask for the new hashed bundles.
 - `CORS_ALLOWED_ORIGINS` must track `FRONTEND_PORT`. They are separate variables and nothing validates that they agree; a mismatch blocks every API call from the browser.
 
+**CI (step 11):**
+
+- `.github/workflows/ci.yml` runs four jobs: `backend`, `frontend`, `rag-service` in parallel, then `stack` (compose build + `scripts/smoke-test.sh`) gated on all three. The stack job is the expensive one, so it only runs once the cheap suites are green.
+- **The stack job must work without secrets.** PRs from forks never receive repository secrets, so the CI `.env` falls back to a placeholder Anthropic key and an empty Voyage key. The smoke test degrades gracefully — triage reports as a NOTE rather than a failure — so the job still asserts the other 11 things and exits 0. Do not make triage a hard assertion there or every fork PR goes red.
+- `JWT_SECRET` is generated with `openssl rand -base64 64` and `POSTGRES_PASSWORD` with `rand -hex 24`. The hex is deliberate: the password is interpolated into the RAG service's `DATABASE_URL`, so a base64 `/` or `+` would corrupt the connection string.
+- Push triggers on every branch because all work here happens on unmerged feature branches; a PR therefore runs both the push and PR workflows. Accepted tradeoff — restricting push to `main` would mean no CI at all until branches start merging.
+- The `rag-service` image is a **multi-stage build**: `build-essential` and `uv` stay in the build stage. That took it from 1.76GB to 548MB, which matters because CI rebuilds it on every run. Its healthcheck uses the venv interpreter rather than curl, so the runtime stage installs no apt packages at all.
+
 **Error envelope:**
 
 - All domain exceptions extend `com.ticketmind.backend.common.exception.ApiException` (status + stable machine code). `GlobalExceptionHandler` translates them to `ApiError { status, code, fieldErrors? }`. Exception messages are **never** returned to the client — only the code. The generic `Exception` handler logs the real cause and returns `internal_error` with HTTP 500, so internal class names / messages don't leak.
@@ -199,28 +211,44 @@ These are non-obvious choices that future code must keep consistent.
 - Don't `--no-verify`, don't force-push. If a hook fails, fix the underlying issue.
 - `.githooks/pre-commit` blocks staged content shaped like a live credential (Anthropic, OpenAI, Voyage, GitHub, AWS, PEM blocks). It is versioned but `core.hooksPath` is local config, so each clone runs `git config core.hooksPath .githooks` once. The patterns require real key length, so `sk-ant-replace-me` and the `sk-ant-super-secret` fixture in `rag-service/tests/test_config.py` pass — if a rule fires on a fixture, shorten the fixture rather than loosening the rule.
 
-## Where step 10 (Full-stack docker-compose) left off
+## Where steps 10-11 left off
 
-`feature/docker-compose` is pushed, branched off `feature/rag-wiring`.
-**Shipped:**
+`feature/docker-compose` holds both slices (step 10 is pushed; step 11 is
+uncommitted on top of it).
 
-- `frontend/Dockerfile` (node build → nginx serve) + `frontend/nginx.conf` (SPA fallback, asset caching, gzip, security headers, `/healthz` probe).
-- `docker-compose.yml` — all four services with healthchecks and ordered `depends_on`. `postgres` → `backend` → `rag-service`; `frontend` waits on `backend`.
-- `.dockerignore` for `frontend` and `rag-service`.
-- `scripts/smoke-test.sh` — the cross-service check step 9 could not cheaply write. 11 assertions: three healthchecks, SPA serving + deep-link fallback, RAG auth rejection, and a register → create-ticket → poll-for-triage flow that also asserts the returned priority is in the backend enum.
-- **Bug fixed:** `RagClientConfig` now pins HTTP/1.1 (see the step 10 notes above). Regression guards added in `RagClientConfigTest` — a version assertion plus a real-socket test through the actual request factory.
+**Step 10 — shipped:** `frontend/Dockerfile` + `nginx.conf`, the four-service
+`docker-compose.yml`, `.dockerignore`s, and `scripts/smoke-test.sh`. Fixed a
+real bug only a running stack could expose — the JDK HttpClient defaulted to
+HTTP/2 and uvicorn's h11 parser rejected the upgrade handshake, so request
+bodies never reached FastAPI. See the step 10 notes above.
 
-**Verified by running it:** all four containers healthy on first `up`, 11/11 smoke assertions green, clean `down -v`. The stack was exercised under an isolated compose project (`-p tm-smoke`) with a scratch env file, so no real key or volume was involved.
+**Step 11 — shipped:** `.github/workflows/ci.yml` (four jobs, see the CI notes
+above) and a multi-stage `rag-service/Dockerfile` that cut the image from
+1.76GB to 548MB.
 
-**Known rough edges (not blockers):**
+**Verified locally, not yet on a runner:** every command each job runs was
+executed on this machine — all three suites, `npm run format:check`, the
+compose build, and the smoke test (14/14 with real keys). The CI `.env`
+generator was validated against `docker compose config`. What has *not* been
+observed is the workflow running on a GitHub runner; the first push will be
+the real test, and Linux-vs-macOS differences are the likely source of any
+surprise.
 
-- The `rag-service` image is **1.76GB** — `build-essential` is installed for the build and never removed, and the whole uv venv ships. A multi-stage build would cut this dramatically. Worth doing before step 11 pushes images anywhere.
-- With no `VOYAGE_API_KEY`, `/triage` answers **500 with a stack trace** rather than the clean 502 `upstream_error` the LLM path already returns. Functionally harmless (the backend degrades gracefully and the ticket is fine), but it is a poor first-run experience for someone who just ran `docker compose up`. Catching provider errors in `TriageService` and mapping them to `TriageError` would fix it.
-- Triage was never observed succeeding end-to-end, because that needs real Anthropic + Voyage keys. Everything up to the embedding call is proven.
+**Known rough edges, deliberately not fixed:**
 
-**Step 10 is closed.** Step 11 adds `.github/workflows`: run the three suites on push (backend needs Docker for Testcontainers, which GitHub runners provide), build the three images, and ideally stand the stack up and run `scripts/smoke-test.sh` as a job — that is now a single command and is the check most likely to catch cross-service drift. Shrinking the rag-service image first would cut CI time.
+- **`rag-service` has no committed lockfile.** `.gitignore` excludes `uv.lock`
+  pending a "single uv workspace" that never materialised. CI therefore
+  re-resolves dependencies on every run: not reproducible, and a transitive
+  bump can turn the build red with no code change. Committing
+  `rag-service/uv.lock` is the fix; left alone because it reverses a
+  documented decision that is not mine to overturn.
+- A missing `VOYAGE_API_KEY` still surfaces as a 500 with a stack trace rather
+  than the clean 502 `upstream_error` the LLM path returns.
+- No image publishing. That needs a registry and credentials — a deployment
+  decision, not a CI one.
 
-**Not on the 11-step plan but blocking "done": nothing has been merged.** `main` is still the initial README commit; every branch from `feature/auth` onward is stacked on its predecessor rather than on `main`. Merging them in order — or opening PRs in sequence — is its own piece of work.
+**Still TODO to close step 11:** commit + push, then watch the first run and
+fix whatever the runner disagrees with.
 
 ## Out of scope
 
