@@ -27,7 +27,8 @@ describe('LoginPage', () => {
         expect(body).toEqual({ email: 'alice@example.com', password: 'hunter2hunter2' });
         return HttpResponse.json({
           accessToken: 'signed-in-token',
-          accessTokenExpiresIn: 900,
+          tokenType: 'Bearer',
+          expiresAt: new Date(Date.now() + 900_000).toISOString(),
           user: {
             id: '11111111-1111-1111-1111-111111111111',
             email: 'alice@example.com',

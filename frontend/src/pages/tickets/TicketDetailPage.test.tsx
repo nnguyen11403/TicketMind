@@ -23,7 +23,8 @@ function authedRefresh(user: UserOpts) {
     http.post(`${BASE}/auth/refresh`, () =>
       HttpResponse.json({
         accessToken: 'test-token',
-        accessTokenExpiresIn: 900,
+        tokenType: 'Bearer',
+        expiresAt: new Date(Date.now() + 900_000).toISOString(),
         user: {
           id: user.id,
           email: `${user.displayName.toLowerCase()}@example.com`,

@@ -102,6 +102,14 @@ public class User {
 		this.lastLoginAt = now;
 	}
 
+	/**
+	 * Change this user's role. Named rather than a bare setter so every role
+	 * change is greppable — this is the only path to staff privileges.
+	 */
+	public void changeRole(UserRole next) {
+		this.role = next;
+	}
+
 	public UUID getId() { return id; }
 	public String getEmail() { return email; }
 	public String getPasswordHash() { return passwordHash; }

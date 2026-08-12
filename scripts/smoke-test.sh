@@ -137,6 +137,20 @@ else
 fi
 
 if [ -n "$token" ]; then
+	# The SPA parses this response with a strict Zod schema, so a field the
+	# backend renames (or never sent) breaks login and registration in the
+	# browser while every backend test and every MSW-mocked frontend test still
+	# passes — exactly how `accessTokenExpiresIn` shipped. These field names
+	# must stay in step with authResponseSchema in frontend/src/api/auth.ts.
+	for field in accessToken tokenType expiresAt; do
+		printf '%s' "$reg" | grep -q "\"$field\":" \
+			&& ok "auth response carries \"$field\" (the SPA's schema requires it)" \
+			|| bad "auth response is MISSING \"$field\" — the SPA cannot parse it and login will fail"
+	done
+	printf '%s' "$reg" | grep -qE '"user":\{[^}]*"role":' \
+		&& ok "auth response carries user.role" \
+		|| bad "auth response is missing user.role — the SPA cannot parse it"
+
 	created=$(curl -fsS -X POST "$BACKEND_URL/tickets" \
 		-H "Authorization: Bearer $token" -H 'Content-Type: application/json' \
 		-d '{"title":"Card charged twice","description":"I was billed 40 instead of 20 on my last invoice."}' 2>/dev/null)

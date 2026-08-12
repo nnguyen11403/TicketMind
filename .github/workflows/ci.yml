@@ -65,10 +65,12 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
-          cache-dependency-glob: rag-service/pyproject.toml
+          cache-dependency-glob: rag-service/uv.lock
       - name: Sync
         working-directory: rag-service
-        run: uv sync --all-groups
+        # --frozen fails rather than silently re-resolving if uv.lock is stale,
+        # so a dependency change that was never locked cannot slip through CI.
+        run: uv sync --all-groups --frozen
       - name: Lint
         working-directory: rag-service
         run: uv run ruff check .

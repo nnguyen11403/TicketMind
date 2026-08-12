@@ -15,5 +15,9 @@ public record AuthProperties(
 		@Min(4) int bcryptStrength,
 		@Min(12) int passwordMinLength,
 		@Min(3) int maxFailedAttempts,
-		@NotNull Duration lockoutDuration) {
+		@NotNull Duration lockoutDuration,
+		// Email of the account to promote to ADMIN on startup, and only while
+		// the system has no ADMIN at all. Without it a fresh deployment has no
+		// way to reach staff privileges short of editing Postgres by hand.
+		String bootstrapAdminEmail) {
 }

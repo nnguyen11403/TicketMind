@@ -29,6 +29,7 @@ from .deps import (
     require_internal_key,
 )
 from .embeddings import Embedder, VoyageEmbedder
+from .errors import UpstreamError
 from .kb import KbRepository
 from .llm import AnthropicChat, ChatModel
 from .schemas import (
@@ -39,7 +40,7 @@ from .schemas import (
     TriageRequest,
     TriageResponse,
 )
-from .triage import TriageError, TriageService
+from .triage import TriageService
 
 logger = logging.getLogger(__name__)
 
@@ -106,11 +107,13 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
-    @app.exception_handler(TriageError)
-    async def _triage_error(_request, exc: TriageError) -> JSONResponse:  # type: ignore[no-untyped-def]
-        # 502 Bad Gateway: our LLM upstream produced something we couldn't
-        # parse. This is not the caller's fault; retrying may help.
-        logger.warning("triage error: %s", exc)
+    @app.exception_handler(UpstreamError)
+    async def _upstream_error(_request, exc: UpstreamError) -> JSONResponse:  # type: ignore[no-untyped-def]
+        # 502 Bad Gateway: a provider we depend on failed, or produced
+        # something we could not parse. Not the caller's fault; retrying may
+        # help. TriageError subclasses UpstreamError, so this one handler
+        # covers both an unusable Claude reply and a call that never landed.
+        logger.warning("upstream error: %s", exc)
         return JSONResponse(status_code=502, content={"detail": "upstream_error"})
 
     @app.get("/health", response_model=HealthResponse)

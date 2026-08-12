@@ -7,6 +7,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -40,6 +41,19 @@ public class GlobalExceptionHandler {
 		return ResponseEntity
 				.status(HttpStatus.BAD_REQUEST)
 				.body(ApiError.of(HttpStatus.BAD_REQUEST.value(), "validation_error", fieldErrors));
+	}
+
+	// Method security (@PreAuthorize) throws inside the controller invocation,
+	// so it lands here rather than in the security filter chain. Without this
+	// it fell through to the generic handler and every denial answered 500
+	// instead of 403 — wrong status, and it reads as a server bug to clients.
+	// AuthorizationDeniedException extends AccessDeniedException, so one
+	// handler covers both.
+	@ExceptionHandler(AccessDeniedException.class)
+	public ResponseEntity<ApiError> handleAccessDenied(AccessDeniedException ex) {
+		log.debug("access denied: {}", ex.getMessage());
+		return ResponseEntity.status(HttpStatus.FORBIDDEN)
+				.body(ApiError.of(HttpStatus.FORBIDDEN.value(), "forbidden"));
 	}
 
 	@ExceptionHandler(NoResourceFoundException.class)

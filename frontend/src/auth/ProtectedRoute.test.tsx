@@ -14,7 +14,8 @@ describe('ProtectedRoute', () => {
       http.post(`${BASE}/auth/refresh`, () =>
         HttpResponse.json({
           accessToken: 'ok-token',
-          accessTokenExpiresIn: 900,
+          tokenType: 'Bearer',
+          expiresAt: new Date(Date.now() + 900_000).toISOString(),
           user: {
             id: '22222222-2222-2222-2222-222222222222',
             email: 'alice@example.com',
@@ -73,7 +74,8 @@ describe('ProtectedRoute', () => {
       http.post(`${BASE}/auth/refresh`, () =>
         HttpResponse.json({
           accessToken: 'ok-token',
-          accessTokenExpiresIn: 900,
+          tokenType: 'Bearer',
+          expiresAt: new Date(Date.now() + 900_000).toISOString(),
           user: {
             id: '33333333-3333-3333-3333-333333333333',
             email: 'user@example.com',

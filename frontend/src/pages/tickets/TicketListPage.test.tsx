@@ -14,7 +14,8 @@ function authedRefresh(role: 'USER' | 'AGENT' | 'ADMIN' = 'USER') {
     http.post(`${BASE}/auth/refresh`, () =>
       HttpResponse.json({
         accessToken: 'test-token',
-        accessTokenExpiresIn: 900,
+        tokenType: 'Bearer',
+        expiresAt: new Date(Date.now() + 900_000).toISOString(),
         user: {
           id: '11111111-1111-1111-1111-111111111111',
           email: 'user@example.com',

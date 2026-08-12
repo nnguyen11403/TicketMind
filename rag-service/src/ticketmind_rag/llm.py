@@ -11,6 +11,8 @@ from typing import Protocol, runtime_checkable
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import HumanMessage, SystemMessage
 
+from .errors import UpstreamError
+
 
 @runtime_checkable
 class ChatModel(Protocol):
@@ -30,9 +32,12 @@ class AnthropicChat:
         )
 
     async def complete(self, system: str, user: str) -> str:
-        response = await self._client.ainvoke(
-            [SystemMessage(content=system), HumanMessage(content=user)]
-        )
+        try:
+            response = await self._client.ainvoke(
+                [SystemMessage(content=system), HumanMessage(content=user)]
+            )
+        except Exception as exc:
+            raise UpstreamError(f"chat provider failed: {exc}") from exc
         content = response.content
         if isinstance(content, list):
             # LangChain can return content blocks for multi-part responses.

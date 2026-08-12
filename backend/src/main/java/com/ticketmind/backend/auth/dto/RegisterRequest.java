@@ -8,4 +8,11 @@ public record RegisterRequest(
 		@NotBlank @Email @Size(max = 254) String email,
 		@NotBlank @Size(min = 12, max = 256) String password,
 		@NotBlank @Size(max = 120) String displayName) {
+
+	// See LoginRequest: the generated toString() would leak the plaintext
+	// password into the DEBUG log that the dev profile turns on.
+	@Override
+	public String toString() {
+		return "RegisterRequest[email=" + email + ", password=***, displayName=" + displayName + "]";
+	}
 }

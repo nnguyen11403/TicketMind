@@ -71,6 +71,12 @@ app:
     # Account lockout: lock after N failed attempts for T minutes.
     max-failed-attempts: 5
     lockout-duration: PT15M
+    # Promotes this account to ADMIN at startup, but only while no ADMIN
+    # exists. Registration always creates a USER and role changes need an
+    # ADMIN, so without this a fresh deployment can only reach staff
+    # privileges by editing Postgres directly. Register the account first,
+    # then start with this set.
+    bootstrap-admin-email: ${BOOTSTRAP_ADMIN_EMAIL:}
   cookie:
     # Must be true in production (cookie only sent over HTTPS). Override to
     # false in the dev profile to allow local http://localhost testing.

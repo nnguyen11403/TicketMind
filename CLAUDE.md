@@ -35,7 +35,7 @@ Residual risk is non-git only (pasted into a chat, a screenshot, a log). Rotatio
 
 **The RAG pipeline is verified end-to-end (2026-08-12).** With real Anthropic + Voyage keys the full loop was observed working against the compose stack: ticket created → Claude returned `billing`/`HIGH` plus a usable multi-step resolution → resolving the ticket mirrored it into `kb_documents` (retrievable at 0.678 cosine) → a second, differently-worded ticket retrieved the first and cited its UUID. That was the last genuinely unproven claim in the project.
 
-**Product gap — no way to create an AGENT or ADMIN.** Registration always yields `USER`, and there is no admin endpoint, promotion flow, or seed. On a fresh deployment nobody can use any staff feature (status changes beyond a submitter self-close, assignment, the staff sidebar) without `UPDATE users SET role='AGENT'` straight in Postgres. Found while exercising the compose stack. Needs its own slice before any deployment.
+**Role management (was a gap, now closed).** Registration still yields `USER`, but staff privileges no longer require editing Postgres: set `BOOTSTRAP_ADMIN_EMAIL` to an already-registered account and it is promoted to ADMIN on startup — **only while no ADMIN exists**, so a deliberate demotion is not silently undone on the next restart. From there `PATCH /users/{id}/role` (ADMIN only) grants roles, `GET /users` returns the AGENT+ADMIN roster for an assignee picker, and the last ADMIN cannot be demoted (409 `last_admin`).
 
 ## Commands
 
@@ -144,6 +144,13 @@ These are non-obvious choices that future code must keep consistent.
 - Push triggers on every branch because all work here happens on unmerged feature branches; a PR therefore runs both the push and PR workflows. Accepted tradeoff — restricting push to `main` would mean no CI at all until branches start merging.
 - `scripts/smoke-test.sh` now also asserts **CORS** and **what URL is baked into the SPA bundle**. Both are silent-failure classes that no unit suite can reach: a wrong `CORS_ALLOWED_ORIGINS` leaves every service healthy and every test green while the app is unusable in a browser, and `VITE_API_BASE_URL` is inlined by Vite at build time, so building the image with a compose service name ships a bundle whose API calls the browser cannot resolve.
 - The `rag-service` image is a **multi-stage build**: `build-essential` and `uv` stay in the build stage. That took it from 1.76GB to 548MB, which matters because CI rebuilds it on every run. Its healthcheck uses the venv interpreter rather than curl, so the runtime stage installs no apt packages at all.
+
+**Bugs the browser and the live stack exposed (step 11 verification):**
+
+- **The SPA could never log in.** `authResponseSchema` required an `accessTokenExpiresIn` number the backend has never sent — it returns `tokenType` and `expiresAt`. Zod's `parse()` threw on every successful login and registration: the API call succeeded, the user saw "Something went wrong", and the account was silently created. All 67 frontend tests passed because the MSW fixtures returned the *schema's* shape rather than the backend's. The field was never read anywhere. Fixed by matching `TokenResponse`; the smoke test now asserts the live response carries every field the schema requires, because that is the only place the two sides meet.
+- **Plaintext passwords in the logs.** A Java record's generated `toString()` prints every component, and Spring DEBUG-logs the deserialised request body — which the `dev` profile enables and docker-compose defaults to. Every login and registration wrote the user's password to the container log. `LoginRequest` and `RegisterRequest` now override `toString()`; `CredentialRedactionTest` pins it.
+- **`@PreAuthorize` denials returned 500.** Method security throws inside the controller invocation, so it reaches `GlobalExceptionHandler` rather than the security filter chain, and fell through to the generic handler. Nothing had used method security before `UserController`. Now 403 `forbidden`.
+- **Provider failures returned 500 with a stack trace.** A missing `VOYAGE_API_KEY` crashed the request instead of reporting an upstream fault. `UpstreamError` (in `rag-service/.../errors.py`) now wraps outbound provider calls in both adapters and maps to 502 `upstream_error`; `TriageError` subclasses it, so one handler covers an unusable Claude reply and a call that never landed.
 
 **Error envelope:**
 

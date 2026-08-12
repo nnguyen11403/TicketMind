@@ -12,9 +12,16 @@ export const authenticatedUserSchema = z.object({
   role: userRoleSchema,
 });
 
+// Mirrors the backend's TokenResponse record exactly. It previously required
+// an `accessTokenExpiresIn` number that the backend has never sent, so
+// parse() threw on every successful login and registration — the API call
+// succeeded, the SPA reported "Something went wrong", and no test noticed
+// because the MSW fixtures returned this schema's shape rather than the
+// backend's. If you change this, change TokenResponse too.
 export const authResponseSchema = z.object({
   accessToken: z.string(),
-  accessTokenExpiresIn: z.number().int().positive(),
+  tokenType: z.string(),
+  expiresAt: z.string(),
   user: authenticatedUserSchema,
 });
 

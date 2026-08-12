@@ -11,7 +11,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class PasswordPolicyTest {
 
-	private final AuthProperties properties = new AuthProperties(12, 12, 5, Duration.ofMinutes(15));
+	private final AuthProperties properties = new AuthProperties(12, 12, 5, Duration.ofMinutes(15), null);
 	private final PasswordPolicy policy = new PasswordPolicy(properties);
 
 	@Test

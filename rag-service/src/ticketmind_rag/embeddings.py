@@ -12,6 +12,8 @@ from typing import Protocol, runtime_checkable
 
 import voyageai
 
+from .errors import UpstreamError
+
 
 @runtime_checkable
 class Embedder(Protocol):
@@ -39,7 +41,14 @@ class VoyageEmbedder:
     async def embed_batch(self, texts: list[str]) -> list[list[float]]:
         if not texts:
             return []
-        result = await self._client.embed(texts=texts, model=self._model)
+        try:
+            result = await self._client.embed(texts=texts, model=self._model)
+        except Exception as exc:
+            # Deliberately broad: every failure mode of an outbound provider
+            # call — auth, quota, timeout, transport — is an upstream problem
+            # from our side. Without this a missing VOYAGE_API_KEY surfaced as
+            # a 500 with a stack trace instead of a clean 502.
+            raise UpstreamError(f"embedding provider failed: {exc}") from exc
         # voyageai returns a list of Python lists on `.embeddings`. Cast to
         # plain floats to keep pgvector's binary encoder happy.
         return [[float(x) for x in vec] for vec in result.embeddings]

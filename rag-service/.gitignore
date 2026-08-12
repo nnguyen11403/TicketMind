@@ -21,9 +21,10 @@ dist/
 coverage.xml
 htmlcov/
 
-# uv lock is intentionally committed at the repo top-level workflow; keep the
-# service-local lockfile out until we standardise on a single uv workspace.
-uv.lock
+# uv.lock IS committed. CI resolves dependencies on every run, so without a
+# lockfile the build is not reproducible and a transitive release can turn it
+# red with no code change. The "single uv workspace" this was waiting on never
+# materialised, and there is still exactly one Python service.
 
 # Editors
 .idea/

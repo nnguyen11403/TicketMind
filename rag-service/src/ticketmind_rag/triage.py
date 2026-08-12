@@ -6,6 +6,7 @@ import json
 import re
 from typing import get_args
 
+from .errors import UpstreamError
 from .kb import KbRepository
 from .llm import ChatModel
 from .prompts import TRIAGE_SYSTEM_PROMPT, build_triage_user_prompt
@@ -15,7 +16,7 @@ _VALID_PRIORITIES: frozenset[str] = frozenset(get_args(Priority))
 _JSON_BLOCK_RE = re.compile(r"\{.*\}", re.DOTALL)
 
 
-class TriageError(ValueError):
+class TriageError(UpstreamError):
     """Raised when the LLM produced a response we can't turn into a
     :class:`TriageResponse`. Callers surface this as HTTP 502 so the backend
     treats it as an upstream problem, not a bad request."""

@@ -2,6 +2,7 @@ import pytest
 from httpx import AsyncClient
 
 from tests.conftest import auth
+from ticketmind_rag.errors import UpstreamError
 from ticketmind_rag.kb import KbRepository
 from ticketmind_rag.llm import FakeChat
 from ticketmind_rag.schemas import KbDocumentIn, KbSearchHit, TriageRequest
@@ -134,3 +135,56 @@ def test_kb_search_hit_used_in_score_lookup() -> None:
     # triage service depends on the shape when it composes scores.
     hit = KbSearchHit(id="1", external_id="kb-1", title="t", body="b", category=None, score=0.5)
     assert hit.score == 0.5
+
+
+async def test_provider_failure_is_502_not_500(client: AsyncClient) -> None:
+    """A dead embedding provider must look like an upstream fault, not a crash.
+
+    Before this, a missing VOYAGE_API_KEY produced a 500 with a stack trace in
+    the logs — functionally survivable (the backend keeps the ticket) but a
+    terrible first-run experience for anyone who just ran `docker compose up`.
+    """
+
+    class DeadEmbedder:
+        dimension = 8
+
+        async def embed(self, text: str) -> list[float]:
+            raise UpstreamError("embedding provider failed: no API key")
+
+        async def embed_batch(self, texts: list[str]) -> list[list[float]]:
+            raise UpstreamError("embedding provider failed: no API key")
+
+    transport = client._transport  # type: ignore[attr-defined]
+    app = transport.app
+    app.state.kb = KbRepository(pool=app.state.pool, embedder=DeadEmbedder())
+    app.state.triage = TriageService(repo=app.state.kb, chat=app.state.chat, retrieval_k=1)
+
+    response = await client.post(
+        "/triage",
+        headers=auth(),
+        json={"ticket_id": "t-1", "title": "t", "body": "b"},
+    )
+    assert response.status_code == 502
+    assert response.json() == {"detail": "upstream_error"}
+
+
+async def test_kb_upsert_also_reports_provider_failure_as_502(client: AsyncClient) -> None:
+    class DeadEmbedder:
+        dimension = 8
+
+        async def embed(self, text: str) -> list[float]:
+            raise UpstreamError("embedding provider failed: no API key")
+
+        async def embed_batch(self, texts: list[str]) -> list[list[float]]:
+            raise UpstreamError("embedding provider failed: no API key")
+
+    transport = client._transport  # type: ignore[attr-defined]
+    app = transport.app
+    app.state.kb = KbRepository(pool=app.state.pool, embedder=DeadEmbedder())
+
+    response = await client.post(
+        "/kb/documents",
+        headers=auth(),
+        json={"external_id": "kb-1", "title": "t", "body": "b"},
+    )
+    assert response.status_code == 502
