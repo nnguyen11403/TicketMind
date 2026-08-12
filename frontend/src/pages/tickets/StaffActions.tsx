@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   assignTicket,
   changeTicketStatus,
+  retriageTicket,
   type TicketDetail,
   type TicketStatus,
 } from '@/api/tickets';
@@ -20,6 +21,16 @@ export function StaffActions({ ticket }: { ticket: TicketDetail }) {
     mutationFn: (next: TicketStatus) => changeTicketStatus(ticket.id, next),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['ticket', ticket.id] });
+      void qc.invalidateQueries({ queryKey: ['tickets'] });
+    },
+    onError: (err) => setError(formatError(err)),
+  });
+
+  const retriageMutation = useMutation({
+    mutationFn: () => retriageTicket(ticket.id),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['ticket', ticket.id] });
+      void qc.invalidateQueries({ queryKey: ['ticket', ticket.id, 'history'] });
       void qc.invalidateQueries({ queryKey: ['tickets'] });
     },
     onError: (err) => setError(formatError(err)),
@@ -105,6 +116,40 @@ export function StaffActions({ ticket }: { ticket: TicketDetail }) {
             </button>
           ) : null}
         </div>
+      </div>
+
+      <div>
+        <p className="text-xs font-medium text-slate-600 uppercase tracking-wide">AI triage</p>
+        <p className="mt-1 text-sm text-slate-700">
+          {ticket.triagedAt ? (
+            <>
+              {ticket.category ?? 'uncategorised'} &middot;{' '}
+              {ticket.priority?.toLowerCase() ?? 'no priority'}
+            </>
+          ) : (
+            <span className="text-slate-500 italic">Not triaged</span>
+          )}
+        </p>
+        <button
+          type="button"
+          onClick={() => {
+            setError(null);
+            retriageMutation.mutate();
+          }}
+          disabled={retriageMutation.isPending}
+          className="mt-2 rounded-md border border-slate-300 text-slate-700 px-3 py-1.5 text-sm hover:bg-slate-100 disabled:opacity-60"
+        >
+          {retriageMutation.isPending
+            ? 'Analysing…'
+            : ticket.triagedAt
+              ? 'Re-run triage'
+              : 'Run triage'}
+        </button>
+        {!ticket.triagedAt ? (
+          <p className="mt-1 text-xs text-slate-500">
+            Automatic triage can fail on a provider rate limit. Re-running is safe.
+          </p>
+        ) : null}
       </div>
 
       {error ? (

@@ -194,6 +194,14 @@ if [ -n "$token" ]; then
 			note "the ticket was still created, which is the graceful-degradation path"
 		fi
 
+		# Re-triage is staff-only. Asserted with a submitter token because that
+		# costs no model call — the happy path would spend an embedding and a
+		# Claude request on every smoke run, and CI has no provider keys anyway.
+		code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BACKEND_URL/tickets/$ticket_id/triage" \
+			-H "Authorization: Bearer $token")
+		[ "$code" = "404" ] && ok "re-triage refuses a submitter (404, not 403 — ids stay unguessable)" \
+			|| bad "re-triage returned $code for a submitter (expected 404)"
+
 		# Whether or not triage succeeded, a RAG failure must never break the
 		# ticket itself. This is the assertion that actually matters.
 		still_there=$(curl -s -o /dev/null -w '%{http_code}' "$BACKEND_URL/tickets/$ticket_id" -H "Authorization: Bearer $token")

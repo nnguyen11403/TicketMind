@@ -1,6 +1,11 @@
 package com.ticketmind.backend.rag;
 
+import com.ticketmind.backend.common.exception.TicketNotFoundException;
+import com.ticketmind.backend.common.exception.TriageDisabledException;
+import com.ticketmind.backend.common.exception.TriageFailedException;
 import com.ticketmind.backend.rag.dto.TriageResultPayload;
+import com.ticketmind.backend.security.jwt.JwtPrincipal;
+import com.ticketmind.backend.user.UserRole;
 import com.ticketmind.backend.ticket.TicketRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -55,6 +60,47 @@ public class TicketTriageService {
 			log.info("triaged ticket {} as {}/{}", ticketId,
 					result.get().category(), result.get().priority());
 		}
+	}
+
+	/**
+	 * Staff-initiated re-triage. Unlike the automatic path this is synchronous
+	 * and reports failure: the whole point is that somebody clicked a button
+	 * and needs to know whether it worked, so silently degrading the way the
+	 * post-commit listener does would be useless here.
+	 *
+	 * <p>It overwrites an existing result and appends a second TRIAGED row —
+	 * the audit trail should record that a human asked for another opinion.
+	 *
+	 * <p>Motivating case: provider rate limits. Voyage's free tier allows 3
+	 * requests a minute, so a burst of tickets leaves some untriaged through no
+	 * fault of the ticket or the operator.
+	 */
+	public void retriage(JwtPrincipal actor, UUID ticketId) {
+		if (!isStaff(actor)) {
+			// Matches TicketService.assign: a non-staff caller learns nothing
+			// about which ticket ids exist.
+			throw new TicketNotFoundException();
+		}
+		if (!ragClient.isEnabled()) {
+			throw new TriageDisabledException();
+		}
+		Snapshot snapshot = loadSnapshot(ticketId);
+		if (snapshot == null) {
+			throw new TicketNotFoundException();
+		}
+		TriageResultPayload result = ragClient
+				.triage(ticketId, snapshot.title(), snapshot.description())
+				.orElseThrow(TriageFailedException::new);
+		if (!triageWriter.applyTriage(ticketId, result, true)) {
+			// The call succeeded but the result was unusable — an unknown
+			// priority, or the ticket vanished mid-flight.
+			throw new TriageFailedException();
+		}
+		log.info("re-triaged ticket {} as {}/{}", ticketId, result.category(), result.priority());
+	}
+
+	private boolean isStaff(JwtPrincipal actor) {
+		return actor.role() == UserRole.AGENT || actor.role() == UserRole.ADMIN;
 	}
 
 	/**

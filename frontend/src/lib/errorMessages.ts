@@ -13,6 +13,9 @@ const codeMessages: Record<string, string> = {
   agent_required: 'The assignee must be an active agent or admin.',
   forbidden: 'You do not have permission to do that.',
   last_admin: 'You cannot remove the last remaining admin.',
+  triage_failed:
+    'Triage could not be completed — the AI service is unavailable or rate limited. Try again in a minute.',
+  triage_disabled: 'AI triage is switched off for this deployment.',
   internal_error: 'Something went wrong on our end. Please try again shortly.',
   unknown_error: 'Something went wrong. Please try again.',
   network_error: 'Cannot reach the server. Check your connection and retry.',

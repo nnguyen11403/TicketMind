@@ -152,6 +152,13 @@ These are non-obvious choices that future code must keep consistent.
 - **`@PreAuthorize` denials returned 500.** Method security throws inside the controller invocation, so it reaches `GlobalExceptionHandler` rather than the security filter chain, and fell through to the generic handler. Nothing had used method security before `UserController`. Now 403 `forbidden`.
 - **Provider failures returned 500 with a stack trace.** A missing `VOYAGE_API_KEY` crashed the request instead of reporting an upstream fault. `UpstreamError` (in `rag-service/.../errors.py`) now wraps outbound provider calls in both adapters and maps to 502 `upstream_error`; `TriageError` subclasses it, so one handler covers an unusable Claude reply and a call that never landed.
 
+**Re-triage endpoint:**
+
+- `POST /tickets/{id}/triage` re-runs triage on demand. Added because provider rate limits make a failed automatic triage routine — Voyage's free tier allows **3 requests a minute**, so a burst of tickets leaves some untriaged with nothing actually wrong.
+- **Synchronous, and it reports failure** — the opposite of the automatic path. The post-commit listener degrades silently on purpose; this one is a button somebody pressed, so silence would be useless. Failures surface as 502 `triage_failed` or 503 `triage_disabled` (the latter distinguishes "never configured" from "call didn't work").
+- **Staff only, and a non-staff caller gets 404, not 403** — matching `TicketService.assign`, so ticket ids stay unguessable.
+- It **overwrites** an existing result and **appends a second TRIAGED row** with `retriggered: true` rather than editing the first. The audit trail should show that a human asked for another opinion. `TicketTriageWriter.applyTriage` takes a `force` flag for this; the automatic path stays first-write-wins so two racing listeners cannot produce two rows.
+
 **Error envelope:**
 
 - All domain exceptions extend `com.ticketmind.backend.common.exception.ApiException` (status + stable machine code). `GlobalExceptionHandler` translates them to `ApiError { status, code, fieldErrors? }`. Exception messages are **never** returned to the client — only the code. The generic `Exception` handler logs the real cause and returns `internal_error` with HTTP 500, so internal class names / messages don't leak.

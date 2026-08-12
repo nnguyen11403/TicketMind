@@ -1,5 +1,6 @@
 package com.ticketmind.backend.ticket;
 
+import com.ticketmind.backend.rag.TicketTriageService;
 import com.ticketmind.backend.security.jwt.JwtPrincipal;
 import com.ticketmind.backend.ticket.dto.AddCommentRequest;
 import com.ticketmind.backend.ticket.dto.AssignTicketRequest;
@@ -31,9 +32,11 @@ import java.util.UUID;
 public class TicketController {
 
 	private final TicketService ticketService;
+	private final TicketTriageService triageService;
 
-	public TicketController(TicketService ticketService) {
+	public TicketController(TicketService ticketService, TicketTriageService triageService) {
 		this.ticketService = ticketService;
+		this.triageService = triageService;
 	}
 
 	@PostMapping
@@ -84,6 +87,19 @@ public class TicketController {
 			@PathVariable UUID id,
 			@RequestBody AssignTicketRequest request) {
 		return TicketResponse.from(ticketService.assign(principal, id, request));
+	}
+
+	/**
+	 * Re-run triage on demand. Staff only, and synchronous: the caller clicked
+	 * a button and needs the answer, so this reports 502 triage_failed rather
+	 * than degrading quietly the way the automatic post-commit path does.
+	 */
+	@PostMapping("/{id}/triage")
+	public TicketResponse retriage(
+			@AuthenticationPrincipal JwtPrincipal principal,
+			@PathVariable UUID id) {
+		triageService.retriage(principal, id);
+		return TicketResponse.from(ticketService.get(principal, id));
 	}
 
 	@PostMapping("/{id}/comments")

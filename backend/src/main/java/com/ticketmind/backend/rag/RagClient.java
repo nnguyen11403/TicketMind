@@ -40,6 +40,11 @@ public class RagClient {
 		this.enabled = properties.enabled();
 	}
 
+	/** Whether the integration is configured at all, as opposed to failing. */
+	public boolean isEnabled() {
+		return enabled;
+	}
+
 	public Optional<TriageResultPayload> triage(UUID ticketId, String title, String description) {
 		if (!enabled) {
 			return Optional.empty();

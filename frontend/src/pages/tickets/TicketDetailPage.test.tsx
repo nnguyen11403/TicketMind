@@ -122,6 +122,77 @@ describe('TicketDetailPage', () => {
     expect(screen.queryByText(/analysing this ticket/i)).not.toBeInTheDocument();
   }, 15000);
 
+  it('lets an agent re-run triage on a ticket the automatic pass missed', async () => {
+    authedRefresh({ id: AGENT_ID, displayName: 'Aggie', role: 'AGENT' });
+    // Untriaged and old enough that the poller has given up — exactly the
+    // state a provider rate limit leaves a ticket in.
+    const longAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    let triaged = false;
+    server.use(
+      http.get(`${BASE}/tickets/${TICKET_ID}`, () =>
+        HttpResponse.json(
+          triaged
+            ? ticket({
+                createdAt: longAgo,
+                category: 'billing',
+                suggestedResolution: 'Refund the duplicate charge.',
+                triagedAt: new Date().toISOString(),
+              })
+            : ticket({ createdAt: longAgo }),
+        ),
+      ),
+      http.get(`${BASE}/tickets/${TICKET_ID}/history`, () => HttpResponse.json(history())),
+      http.post(`${BASE}/tickets/${TICKET_ID}/triage`, () => {
+        triaged = true;
+        return HttpResponse.json(
+          ticket({
+            createdAt: longAgo,
+            category: 'billing',
+            suggestedResolution: 'Refund the duplicate charge.',
+            triagedAt: new Date().toISOString(),
+          }),
+        );
+      }),
+    );
+
+    renderWithProviders(
+      <Routes>
+        <Route path="/tickets/:id" element={<TicketDetailPage />} />
+      </Routes>,
+      { route: `/tickets/${TICKET_ID}` },
+    );
+
+    const button = await screen.findByRole('button', { name: /run triage/i });
+    await userEvent.click(button);
+
+    expect(await screen.findByText('Refund the duplicate charge.')).toBeInTheDocument();
+  });
+
+  it('surfaces a rate-limited triage instead of failing silently', async () => {
+    authedRefresh({ id: AGENT_ID, displayName: 'Aggie', role: 'AGENT' });
+    const longAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    server.use(
+      http.get(`${BASE}/tickets/${TICKET_ID}`, () =>
+        HttpResponse.json(ticket({ createdAt: longAgo })),
+      ),
+      http.get(`${BASE}/tickets/${TICKET_ID}/history`, () => HttpResponse.json(history())),
+      http.post(`${BASE}/tickets/${TICKET_ID}/triage`, () =>
+        HttpResponse.json({ status: 502, code: 'triage_failed' }, { status: 502 }),
+      ),
+    );
+
+    renderWithProviders(
+      <Routes>
+        <Route path="/tickets/:id" element={<TicketDetailPage />} />
+      </Routes>,
+      { route: `/tickets/${TICKET_ID}` },
+    );
+
+    await userEvent.click(await screen.findByRole('button', { name: /run triage/i }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/rate limited|unavailable/i);
+  });
+
   it('does not poll or show a pending hint for a ticket that is already triaged', async () => {
     authedRefresh({ id: SUBMITTER_ID, displayName: 'Alice', role: 'USER' });
     server.use(

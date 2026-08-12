@@ -52,8 +52,20 @@ public class TicketTriageWriter {
 		this.clock = clock;
 	}
 
+	/** Automatic path: first result wins, never overwrites. */
 	@Transactional
 	public boolean applyTriage(UUID ticketId, TriageResultPayload result) {
+		return applyTriage(ticketId, result, false);
+	}
+
+	/**
+	 * @param force when true an already-triaged ticket is overwritten. Only the
+	 *              staff-initiated re-triage sets this: the automatic path must
+	 *              stay first-write-wins so two listeners racing on the same
+	 *              ticket cannot produce two TRIAGED rows.
+	 */
+	@Transactional
+	public boolean applyTriage(UUID ticketId, TriageResultPayload result, boolean force) {
 		Optional<TicketPriority> priority = parsePriority(result.priority());
 		if (priority.isEmpty()) {
 			log.warn("discarding triage for ticket {}: unknown priority {}", ticketId, result.priority());
@@ -64,7 +76,7 @@ public class TicketTriageWriter {
 			// Deleted between the triage call and the write-back.
 			return false;
 		}
-		if (ticket.getTriagedAt() != null) {
+		if (ticket.getTriagedAt() != null && !force) {
 			// A concurrent triage won the race; first result wins so the
 			// history stays a single TRIAGED entry.
 			return false;
@@ -77,6 +89,7 @@ public class TicketTriageWriter {
 		payload.put("category", result.category());
 		payload.put("priority", priority.get().name());
 		payload.put("summary", result.summary());
+		payload.put("retriggered", force);
 		payload.put("citations", result.citationsOrEmpty().stream()
 				.map(TriageResultPayload.Citation::externalId)
 				.toList());

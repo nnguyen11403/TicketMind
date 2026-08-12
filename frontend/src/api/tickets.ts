@@ -126,6 +126,11 @@ export async function assignTicket(id: string, assigneeId: string | null): Promi
   return ticketDetailSchema.parse(payload);
 }
 
+export async function retriageTicket(id: string): Promise<TicketDetail> {
+  const payload = await apiFetch<unknown>(`/tickets/${id}/triage`, { method: 'POST' });
+  return ticketDetailSchema.parse(payload);
+}
+
 export async function addComment(id: string, body: string): Promise<HistoryEntry> {
   const payload = await apiFetch<unknown>(`/tickets/${id}/comments`, {
     method: 'POST',
