@@ -1,6 +1,15 @@
-# Root docker-compose for local development.
-# Subsequent feature branches add backend, rag-service, and frontend services.
-# Until then, this brings up Postgres + pgvector for the backend to develop against.
+# Full local stack: Postgres + pgvector, Spring backend, FastAPI RAG service,
+# and the built React frontend behind nginx.
+#
+#   cp .env.example .env    # then fill in ANTHROPIC_API_KEY / VOYAGE_API_KEY
+#   docker compose up --build
+#
+#   frontend  http://localhost:3000
+#   backend   http://localhost:8080
+#   RAG       http://localhost:8000
+#
+# Startup is deliberately serialised postgres -> backend -> rag-service; see
+# the comment on rag-service.
 
 services:
   postgres:
@@ -21,39 +30,81 @@ services:
       timeout: 5s
       retries: 5
 
-  # backend:
-  #   build: ./backend
-  #   depends_on:
-  #     postgres: { condition: service_healthy }
-  #   environment:
-  #     SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
-  #     SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
-  #     SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
-  #     JWT_SECRET: ${JWT_SECRET}
-  #     RAG_ENABLED: "true"
-  #     RAG_SERVICE_URL: http://rag-service:8000
-  #     RAG_INTERNAL_API_KEY: ${RAG_INTERNAL_API_KEY}
-  #   ports:
-  #     - "${BACKEND_PORT:-8080}:8080"
+  backend:
+    build:
+      context: ./backend
+    container_name: ticketmind-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-dev}
+      # application.yml builds the JDBC URL from these rather than taking a
+      # whole SPRING_DATASOURCE_URL.
+      DB_HOST: postgres
+      DB_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+      # Must match the origin the browser actually loads the SPA from. If you
+      # change FRONTEND_PORT, change this too or every API call is blocked.
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000}
+      RAG_ENABLED: "true"
+      # Service name, not localhost: this call is made from inside the network.
+      RAG_SERVICE_URL: http://rag-service:8000
+      RAG_INTERNAL_API_KEY: ${RAG_INTERNAL_API_KEY}
+    ports:
+      - "${BACKEND_PORT:-8080}:8080"
 
-  # rag-service:
-  #   build: ./rag-service
-  #   depends_on:
-  #     postgres: { condition: service_healthy }
-  #   environment:
-  #     ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
-  #     VOYAGE_API_KEY: ${VOYAGE_API_KEY}
-  #     DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
-  #     RAG_INTERNAL_API_KEY: ${RAG_INTERNAL_API_KEY}
-  #   ports:
-  #     - "${RAG_SERVICE_PORT:-8000}:8000"
+  rag-service:
+    build:
+      context: ./rag-service
+    container_name: ticketmind-rag
+    restart: unless-stopped
+    depends_on:
+      # Waits on the BACKEND, not just Postgres. Both services run
+      # `CREATE EXTENSION IF NOT EXISTS vector` against the same database at
+      # startup, and issuing that concurrently from two connections can fail
+      # with a duplicate-key or "tuple concurrently updated" error. Letting
+      # the backend's Flyway migration win the race makes the RAG service's
+      # copy an unconditional no-op.
+      backend:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      RAG_INTERNAL_API_KEY: ${RAG_INTERNAL_API_KEY}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      RAG_CHAT_MODEL: ${RAG_CHAT_MODEL:-claude-opus-5}
+      VOYAGE_API_KEY: ${VOYAGE_API_KEY}
+      RAG_EMBEDDING_MODEL: ${RAG_EMBEDDING_MODEL:-voyage-3}
+    ports:
+      - "${RAG_SERVICE_PORT:-8000}:8000"
+    healthcheck:
+      # curl is already in the image (the Dockerfile installs it for the build
+      # stage), so this needs no extra layer.
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
 
-  # frontend:
-  #   build: ./frontend
-  #   depends_on:
-  #     - backend
-  #   ports:
-  #     - "${FRONTEND_PORT:-3000}:80"
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # Baked into the bundle at build time and read by the BROWSER, so it
+        # has to be the host-visible address — `backend` does not resolve on
+        # the user's machine. Changing it requires a rebuild, not a restart.
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8080}
+    container_name: ticketmind-frontend
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "${FRONTEND_PORT:-3000}:80"
 
 volumes:
   postgres_data:

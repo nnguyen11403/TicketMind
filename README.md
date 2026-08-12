@@ -57,17 +57,25 @@ When a new ticket is submitted, the backend stores it in Postgres, then triggers
 ```bash
 git clone https://github.com/<your-username>/ticketmind.git
 cd ticketmind
-cp .env.example .env   # add your LLM API key
-docker-compose up --build
+cp .env.example .env   # add ANTHROPIC_API_KEY and VOYAGE_API_KEY
+docker compose up --build
 ```
 
 - Frontend: http://localhost:3000
 - Backend API: http://localhost:8080
-- API docs (Swagger): http://localhost:8080/swagger-ui.html
+- RAG service: http://localhost:8000
+
+Once the stack is up, `./scripts/smoke-test.sh` checks all three services and
+runs a ticket through end to end.
+
+Without a `VOYAGE_API_KEY` the stack still runs — tickets are created normally,
+they just stay untriaged.
 
 ### Run tests
 ```bash
-./mvnw test
+cd backend      && ./mvnw test    # JUnit + Testcontainers (Docker required)
+cd frontend     && npm test       # Vitest + Testing Library + MSW
+cd rag-service  && uv run pytest  # pytest + Testcontainers
 ```
 
 ## Project Status
@@ -75,8 +83,8 @@ docker-compose up --build
 In active development. Current milestones:
 - [x] Ticket CRUD API + Postgres schema
 - [x] React frontend (submission form, ticket list/detail)
-- [ ] RAG pipeline (embedding + retrieval + LLM categorization)
-- [ ] Docker Compose full stack
+- [x] RAG pipeline (embedding + retrieval + LLM categorization)
+- [x] Docker Compose full stack
 - [ ] CI/CD pipeline
 - [ ] Live deployment
 

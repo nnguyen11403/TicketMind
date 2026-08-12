@@ -1,0 +1,163 @@
+#!/usr/bin/env bash
+# Cross-service smoke test for a running TicketMind stack.
+#
+# Everything below the HTTP boundary already has unit and integration tests.
+# What no other suite covers is whether the three services agree with each
+# other once they are real processes on a real network: the backend's
+# MockRestServiceServer and the RAG service's FakeChat are each other's blind
+# spot. This is the only check that would have caught the URGENT/CRITICAL
+# priority mismatch found in step 9.
+#
+#   docker compose up -d --build
+#   ./scripts/smoke-test.sh
+#
+# Overridable:
+#   BACKEND_URL   (default http://localhost:8080)
+#   RAG_URL       (default http://localhost:8000)
+#   FRONTEND_URL  (default http://localhost:3000)
+#   RAG_KEY       (default from $RAG_INTERNAL_API_KEY)
+
+set -uo pipefail
+
+BACKEND_URL="${BACKEND_URL:-http://localhost:8080}"
+RAG_URL="${RAG_URL:-http://localhost:8000}"
+FRONTEND_URL="${FRONTEND_URL:-http://localhost:3000}"
+RAG_KEY="${RAG_KEY:-${RAG_INTERNAL_API_KEY:-}}"
+
+pass=0
+fail=0
+
+ok()   { printf '  \033[32mPASS\033[0m  %s\n' "$1"; pass=$((pass + 1)); }
+bad()  { printf '  \033[31mFAIL\033[0m  %s\n' "$1"; fail=$((fail + 1)); }
+note() { printf '  \033[33mNOTE\033[0m  %s\n' "$1"; }
+
+# Extracts the FIRST occurrence of a string field. Deliberately not sed with a
+# leading `.*`: that is greedy, so on a TicketResponse it returns submitter.id
+# instead of the ticket id — which then 404s and looks like a backend bug.
+json_first() {
+	printf '%s' "$1" | grep -o "\"$2\":\"[^\"]*\"" | head -1 | cut -d'"' -f4
+}
+
+# Waits for an endpoint to answer 2xx. Services come up in dependency order,
+# so the first probe can legitimately take a while.
+wait_for() {
+	name=$1 url=$2 timeout=${3:-120}
+	printf 'waiting for %s ' "$name"
+	elapsed=0
+	while [ "$elapsed" -lt "$timeout" ]; do
+		if curl -fsS -o /dev/null "$url" 2>/dev/null; then
+			printf ' up (%ss)\n' "$elapsed"
+			return 0
+		fi
+		printf '.'
+		sleep 2
+		elapsed=$((elapsed + 2))
+	done
+	printf ' TIMEOUT after %ss\n' "$timeout"
+	return 1
+}
+
+echo
+echo "=== 1. service health ==="
+wait_for "postgres/backend" "$BACKEND_URL/actuator/health" 180 \
+	&& ok "backend /actuator/health" || bad "backend never became healthy"
+wait_for "rag-service" "$RAG_URL/health" 120 \
+	&& ok "rag-service /health" || bad "rag-service never became healthy"
+wait_for "frontend" "$FRONTEND_URL/healthz" 90 \
+	&& ok "frontend /healthz" || bad "frontend never became healthy"
+
+echo
+echo "=== 2. frontend serves the SPA ==="
+body=$(curl -fsS "$FRONTEND_URL/" 2>/dev/null)
+case "$body" in
+	*"<div id=\"root\""*) ok "index.html served at /" ;;
+	*) bad "index.html not served at / (got ${#body} bytes)" ;;
+esac
+# A deep link must fall through to the SPA shell, not 404.
+code=$(curl -s -o /dev/null -w '%{http_code}' "$FRONTEND_URL/tickets/does-not-exist")
+[ "$code" = "200" ] && ok "deep link /tickets/... falls back to the SPA (200)" \
+	|| bad "deep link returned $code, SPA fallback is broken"
+
+echo
+echo "=== 3. RAG service rejects unauthenticated calls ==="
+code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$RAG_URL/triage" \
+	-H 'Content-Type: application/json' -d '{"ticket_id":"x","title":"t","body":"b"}')
+[ "$code" = "401" ] && ok "POST /triage without a key -> 401" \
+	|| bad "POST /triage without a key -> $code (expected 401)"
+
+if [ -n "$RAG_KEY" ]; then
+	code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$RAG_URL/kb/documents" \
+		-H "X-Internal-Key: wrong-key" -H 'Content-Type: application/json' \
+		-d '{"external_id":"x","title":"t","body":"b"}')
+	[ "$code" = "401" ] && ok "wrong internal key -> 401" \
+		|| bad "wrong internal key -> $code (expected 401)"
+fi
+
+echo
+echo "=== 4. end-to-end ticket flow through the backend ==="
+suffix=$(date +%s)$$
+email="smoke-${suffix}@example.com"
+reg=$(curl -fsS -X POST "$BACKEND_URL/auth/register" \
+	-H 'Content-Type: application/json' \
+	-d "{\"email\":\"$email\",\"password\":\"smoke-test-password-1\",\"displayName\":\"Smoke\"}" 2>/dev/null)
+token=$(json_first "$reg" accessToken)
+[ -n "$token" ] && ok "registered $email and received an access token" \
+	|| { bad "registration failed: $reg"; }
+
+if [ -n "$token" ]; then
+	created=$(curl -fsS -X POST "$BACKEND_URL/tickets" \
+		-H "Authorization: Bearer $token" -H 'Content-Type: application/json' \
+		-d '{"title":"Card charged twice","description":"I was billed 40 instead of 20 on my last invoice."}' 2>/dev/null)
+	ticket_id=$(json_first "$created" id)
+	[ -n "$ticket_id" ] && ok "created ticket $ticket_id" || bad "ticket creation failed: $created"
+
+	# The contract chosen in step 9: triage is asynchronous, so the 201 is
+	# deliberately untriaged. A non-null category here would mean someone made
+	# it synchronous and put an LLM call on the submit path.
+	case "$created" in
+		*'"category":null'*) ok "201 response is untriaged, as designed" ;;
+		*) note "201 carried a non-null category — triage may have gone synchronous" ;;
+	esac
+
+	if [ -n "$ticket_id" ]; then
+		echo
+		echo "    waiting up to 60s for asynchronous triage to land..."
+		triaged=""
+		for _ in $(seq 1 20); do
+			sleep 3
+			detail=$(curl -fsS "$BACKEND_URL/tickets/$ticket_id" -H "Authorization: Bearer $token" 2>/dev/null)
+			case "$detail" in
+				*'"triagedAt":null'*|'') ;;
+				*'"triagedAt"'*) triaged="$detail"; break ;;
+			esac
+		done
+		if [ -n "$triaged" ]; then
+			ok "triage landed and was written back to the ticket"
+			priority=$(json_first "$triaged" priority)
+			case "$priority" in
+				LOW|MEDIUM|HIGH|CRITICAL)
+					ok "priority '$priority' is in the backend enum" ;;
+				*)
+					bad "priority '$priority' is NOT one of LOW/MEDIUM/HIGH/CRITICAL — the services have drifted" ;;
+			esac
+			printf '%s' "$triaged" | grep -q '"suggestedResolution":"' \
+				&& ok "a suggested resolution was persisted" \
+				|| note "no suggested resolution on the ticket"
+		else
+			note "triage did not land within 60s — expected without real ANTHROPIC_API_KEY/VOYAGE_API_KEY"
+			note "the ticket was still created, which is the graceful-degradation path"
+		fi
+
+		# Whether or not triage succeeded, a RAG failure must never break the
+		# ticket itself. This is the assertion that actually matters.
+		still_there=$(curl -s -o /dev/null -w '%{http_code}' "$BACKEND_URL/tickets/$ticket_id" -H "Authorization: Bearer $token")
+		[ "$still_there" = "200" ] && ok "ticket survives regardless of RAG outcome" \
+			|| bad "ticket unreadable after triage attempt ($still_there)"
+	fi
+fi
+
+echo
+echo "=========================================="
+printf 'passed: %s   failed: %s\n' "$pass" "$fail"
+echo "=========================================="
+[ "$fail" -eq 0 ] || exit 1

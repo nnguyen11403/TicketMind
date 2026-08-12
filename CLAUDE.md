@@ -21,8 +21,8 @@ Work is shipped one feature branch at a time off `main`. Each step is a separate
 | 7. Ticket UI | `feature/ticket-ui` | pushed, 21/21 vitest green |
 | 8. Python RAG service | `feature/rag-service` | pushed, 41/41 pytest green (89% cov) |
 | 9. Backend ↔ RAG wiring | `feature/rag-wiring` | pushed, 91/91 backend + 67/67 vitest + 41/41 pytest green |
-| 10. Full-stack docker-compose | — | **next** |
-| 11. CI/CD GitHub Actions | — | pending |
+| 10. Full-stack docker-compose | `feature/docker-compose` | **in progress, uncommitted** — 93 backend + 67 vitest + 41 pytest + 11/11 smoke |
+| 11. CI/CD GitHub Actions | — | **next** |
 
 **Anthropic API key — investigated 2026-08-12, not leaked via this repo.** An earlier note here claimed the key had been committed to `.env` and treated it as a blocker for step 9. That was wrong. Verified:
 
@@ -68,6 +68,12 @@ cd rag-service && DOCKER_HOST=unix:///var/run/docker.sock uv run pytest
 cd rag-service && uv run ruff check .          # lint
 cd rag-service && uv run ruff format .         # format
 cd rag-service && uv run uvicorn ticketmind_rag.main:app --reload --port 8000
+
+# Full stack (needs a root .env — copy .env.example and fill in the API keys)
+docker compose up -d --build
+./scripts/smoke-test.sh          # cross-service checks against the running stack
+docker compose down -v           # -v also drops the postgres volume
+docker compose logs -f backend   # or rag-service / frontend / postgres
 ```
 
 **`DOCKER_HOST` is required for the RAG tests on macOS.** Docker Desktop's default
@@ -116,6 +122,15 @@ These are non-obvious choices that future code must keep consistent.
 - The RAG executor's queue is bounded and overflow is **dropped, not run on the caller**: the caller is the thread that just committed a ticket, so `CallerRunsPolicy` would turn a RAG backlog into user-visible latency on `POST /tickets`.
 - `RagClient` truncates title/body to the RAG service's limits (256 / 32000). Ticket descriptions are `TEXT` and would otherwise 422.
 - Resolved tickets are mirrored to `POST /kb/documents` keyed by `external_id = ticket UUID`. Upsert-by-external-id makes reopen-then-re-resolve idempotent.
+
+**Docker Compose (step 10):**
+
+- **The JDK HttpClient must be pinned to HTTP/1.1** (`RagClientConfig.buildHttpClient`). It defaults to `HTTP_2`, which sends an HTTP/1.1 upgrade handshake that uvicorn's h11 parser rejects with "Invalid HTTP request received" — the body never reaches FastAPI, which then answers 422 for a missing body. Every backend test passed anyway, because `MockRestServiceServer` intercepts above the socket. This was found only by running the real stack, and it is the reason `scripts/smoke-test.sh` exists.
+- Startup is serialised **postgres → backend → rag-service**. Both the backend's Flyway V2 and the RAG service run `CREATE EXTENSION IF NOT EXISTS vector` against the same database; issuing that concurrently from two connections can fail with a duplicate-key or "tuple concurrently updated" error. Letting Flyway win makes the RAG service's copy an unconditional no-op. This is why `rag-service` waits on `backend`, not just on `postgres`.
+- `VITE_API_BASE_URL` is a **build arg, not a runtime env var**. Vite inlines `VITE_*` at build time, so the value is baked into the bundle and the frontend image is environment-specific. It must be the address the *browser* can reach (`http://localhost:8080`), never a compose service name — the request is made from the user's machine, where `backend` does not resolve. Changing the API host means rebuilding the image.
+- `RAG_SERVICE_URL` is the mirror image: compose hardcodes `http://rag-service:8000` because that call is made from inside the network. The `.env.example` entry only applies when running the backend on the host.
+- nginx serves the SPA with a `try_files … /index.html` fallback, so a deep link like `/tickets/<uuid>` survives a refresh. `/assets/` is immutable-cached (Vite content-hashes those names) while `index.html` is `no-cache` — cache index.html and browsers never learn to ask for the new hashed bundles.
+- `CORS_ALLOWED_ORIGINS` must track `FRONTEND_PORT`. They are separate variables and nothing validates that they agree; a mismatch blocks every API call from the browser.
 
 **Error envelope:**
 
@@ -184,21 +199,26 @@ These are non-obvious choices that future code must keep consistent.
 - Don't `--no-verify`, don't force-push. If a hook fails, fix the underlying issue.
 - `.githooks/pre-commit` blocks staged content shaped like a live credential (Anthropic, OpenAI, Voyage, GitHub, AWS, PEM blocks). It is versioned but `core.hooksPath` is local config, so each clone runs `git config core.hooksPath .githooks` once. The patterns require real key length, so `sk-ant-replace-me` and the `sk-ant-super-secret` fixture in `rag-service/tests/test_config.py` pass — if a rule fires on a fixture, shorten the fixture rather than loosening the rule.
 
-## Where step 9 (Backend ↔ RAG wiring) left off
+## Where step 10 (Full-stack docker-compose) left off
 
-`feature/rag-wiring` is pushed, branched off `feature/rag-service` (also
-pushed). **Shipped:**
+`feature/docker-compose` is checked out with uncommitted work, branched off
+`feature/rag-wiring`. **Shipped:**
 
-- `backend/.../rag/` — `RagProperties` (`app.rag.*`), `RagClientConfig` (RestClient with a `JdkClientHttpRequestFactory`, separate connect/read timeouts, `X-Internal-Key` default header), `RagClient` (best-effort, never throws), `TicketTriageService` (orchestration, no transaction held across the HTTP call), `TicketTriageWriter` (`@Transactional` write-back), `RagTicketListener` (`@Async` + `AFTER_COMMIT`, `@ConditionalOnProperty`), `RagAsyncConfig` (bounded `rag-` pool that drops on overflow), and the three wire DTOs.
-- `TicketService` publishes `TicketCreatedEvent` on create and `TicketResolvedEvent` on the RESOLVED transition.
-- Config: `app.rag.*` in `application.yml` (disabled by default), disabled in `application-test.yml`, `RAG_ENABLED` / `RAG_SERVICE_URL` added to the root `.env.example` and the commented backend block in `docker-compose.yml`.
-- `rag-service`: priority vocabulary changed `URGENT` → `CRITICAL` to match the backend enum and the V1 check constraint, with a parametrised regression test.
-- Frontend: detail page polls until `triagedAt` lands and shows an "Analysing this ticket…" hint; `Timeline` names the category and priority on a TRIAGED row.
-- Green: **91/91 backend** (was 68 — +9 `RagClientTest`, +7 `TicketTriageServiceIntegrationTest`, +3 `RagPropertiesTest`, +2 `RagIntegrationWiringTest`, +2 in `TicketControllerIntegrationTest`), **67/67 vitest** (was 63), **41/41 pytest** (was 37).
+- `frontend/Dockerfile` (node build → nginx serve) + `frontend/nginx.conf` (SPA fallback, asset caching, gzip, security headers, `/healthz` probe).
+- `docker-compose.yml` — all four services with healthchecks and ordered `depends_on`. `postgres` → `backend` → `rag-service`; `frontend` waits on `backend`.
+- `.dockerignore` for `frontend` and `rag-service`.
+- `scripts/smoke-test.sh` — the cross-service check step 9 could not cheaply write. 11 assertions: three healthchecks, SPA serving + deep-link fallback, RAG auth rejection, and a register → create-ticket → poll-for-triage flow that also asserts the returned priority is in the backend enum.
+- **Bug fixed:** `RagClientConfig` now pins HTTP/1.1 (see the step 10 notes above). Regression guards added in `RagClientConfigTest` — a version assertion plus a real-socket test through the actual request factory.
 
-**Step 9 is closed.** Step 10 stands up the full docker-compose: uncomment the `backend`, `rag-service`, and `frontend` services (the backend block already carries `RAG_ENABLED`/`RAG_SERVICE_URL`/`RAG_INTERNAL_API_KEY`), and add the cross-service smoke test that this slice could not cheaply write. Rotate the leaked Anthropic key before anything actually calls Claude.
+**Verified by running it:** all four containers healthy on first `up`, 11/11 smoke assertions green, clean `down -v`. The stack was exercised under an isolated compose project (`-p tm-smoke`) with a scratch env file, so no real key or volume was involved.
 
-**Not done in step 9 (deliberate):** no end-to-end test runs the real Python service against the real backend — the RAG service is stubbed at the HTTP boundary on the Java side, and the two contracts are kept honest by matching tests on each side rather than by a shared fixture. Step 10 (docker-compose) is where a genuine cross-service smoke test becomes cheap.
+**Known rough edges (not blockers):**
+
+- The `rag-service` image is **1.76GB** — `build-essential` is installed for the build and never removed, and the whole uv venv ships. A multi-stage build would cut this dramatically. Worth doing before step 11 pushes images anywhere.
+- With no `VOYAGE_API_KEY`, `/triage` answers **500 with a stack trace** rather than the clean 502 `upstream_error` the LLM path already returns. Functionally harmless (the backend degrades gracefully and the ticket is fine), but it is a poor first-run experience for someone who just ran `docker compose up`. Catching provider errors in `TriageService` and mapping them to `TriageError` would fix it.
+- Triage was never observed succeeding end-to-end, because that needs real Anthropic + Voyage keys. Everything up to the embedding call is proven.
+
+**Still TODO to close step 10:** commit + push `feature/docker-compose`.
 
 ## Out of scope
 
