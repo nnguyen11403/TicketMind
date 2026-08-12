@@ -24,7 +24,14 @@ Work is shipped one feature branch at a time off `main`. Each step is a separate
 | 10. Full-stack docker-compose | — | **next** |
 | 11. CI/CD GitHub Actions | — | pending |
 
-**Outstanding (out of Claude's control):** rotate the leaked Anthropic API key at console.anthropic.com — the previous key was committed to `.env` and must be revoked before the RAG service is wired up in step 9.
+**Anthropic API key — investigated 2026-08-12, not leaked via this repo.** An earlier note here claimed the key had been committed to `.env` and treated it as a blocker for step 9. That was wrong. Verified:
+
+- `.env` has never appeared in any commit on any ref, and is gitignored (`.gitignore:2`).
+- The key value appears in **zero** git objects — all 238 blobs scanned, including unreachable ones left behind by amended commits.
+- Every `sk-ant-` string in history is a `sk-ant-replace-me` placeholder in a `.env.example`, plus a fake in `rag-service/tests/test_config.py`.
+- GitHub secret scanning **and** push protection are enabled on this public repo and report no alerts, past or present. Anthropic is a scanning partner, so a real key in any pushed commit would have been flagged — and push protection would have refused the push in the first place.
+
+Residual risk is non-git only (pasted into a chat, a screenshot, a log). Rotation is still cheap insurance and the only action that actually neutralises a key; if you rotate, `.env` is the only file to update. Check Console usage history if you want to know whether it was ever used by anyone else.
 
 ## Commands
 
