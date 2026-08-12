@@ -21,7 +21,7 @@ Work is shipped one feature branch at a time off `main`. Each step is a separate
 | 7. Ticket UI | `feature/ticket-ui` | pushed, 21/21 vitest green |
 | 8. Python RAG service | `feature/rag-service` | pushed, 41/41 pytest green (89% cov) |
 | 9. Backend ↔ RAG wiring | `feature/rag-wiring` | pushed, 91/91 backend + 67/67 vitest + 41/41 pytest green |
-| 10. Full-stack docker-compose | `feature/docker-compose` | **in progress, uncommitted** — 93 backend + 67 vitest + 41 pytest + 11/11 smoke |
+| 10. Full-stack docker-compose | `feature/docker-compose` | pushed — 93 backend + 67 vitest + 41 pytest + 11/11 smoke |
 | 11. CI/CD GitHub Actions | — | **next** |
 
 **Anthropic API key — investigated 2026-08-12, not leaked via this repo.** An earlier note here claimed the key had been committed to `.env` and treated it as a blocker for step 9. That was wrong. Verified:
@@ -201,8 +201,8 @@ These are non-obvious choices that future code must keep consistent.
 
 ## Where step 10 (Full-stack docker-compose) left off
 
-`feature/docker-compose` is checked out with uncommitted work, branched off
-`feature/rag-wiring`. **Shipped:**
+`feature/docker-compose` is pushed, branched off `feature/rag-wiring`.
+**Shipped:**
 
 - `frontend/Dockerfile` (node build → nginx serve) + `frontend/nginx.conf` (SPA fallback, asset caching, gzip, security headers, `/healthz` probe).
 - `docker-compose.yml` — all four services with healthchecks and ordered `depends_on`. `postgres` → `backend` → `rag-service`; `frontend` waits on `backend`.
@@ -218,7 +218,9 @@ These are non-obvious choices that future code must keep consistent.
 - With no `VOYAGE_API_KEY`, `/triage` answers **500 with a stack trace** rather than the clean 502 `upstream_error` the LLM path already returns. Functionally harmless (the backend degrades gracefully and the ticket is fine), but it is a poor first-run experience for someone who just ran `docker compose up`. Catching provider errors in `TriageService` and mapping them to `TriageError` would fix it.
 - Triage was never observed succeeding end-to-end, because that needs real Anthropic + Voyage keys. Everything up to the embedding call is proven.
 
-**Still TODO to close step 10:** commit + push `feature/docker-compose`.
+**Step 10 is closed.** Step 11 adds `.github/workflows`: run the three suites on push (backend needs Docker for Testcontainers, which GitHub runners provide), build the three images, and ideally stand the stack up and run `scripts/smoke-test.sh` as a job — that is now a single command and is the check most likely to catch cross-service drift. Shrinking the rag-service image first would cut CI time.
+
+**Not on the 11-step plan but blocking "done": nothing has been merged.** `main` is still the initial README commit; every branch from `feature/auth` onward is stacked on its predecessor rather than on `main`. Merging them in order — or opening PRs in sequence — is its own piece of work.
 
 ## Out of scope
 
