@@ -1,0 +1,85 @@
+#!/bin/sh
+# Blocks a commit whose staged content contains something shaped like a live
+# credential.
+#
+# This sits in front of GitHub's push protection rather than duplicating it:
+# push protection only fires at push time, only for provider patterns GitHub
+# recognises, and only once the secret is already in a local commit that then
+# has to be rewritten. Catching it at commit time means the value never enters
+# the object database at all.
+#
+# Patterns require enough key material that the repo's own placeholders
+# (`sk-ant-replace-me`, and `sk-ant-super-secret` in the RAG config test) do
+# not match. That is deliberate: exempting whole files by name would also
+# exempt a real key pasted into one of them.
+#
+# Enable once per clone:  git config core.hooksPath .githooks
+
+set -u
+
+tab=$(printf '\t')
+rules=$(mktemp)
+findings=$(mktemp)
+trap 'rm -f "$rules" "$findings"' EXIT
+
+# <name><TAB><extended regex>
+cat > "$rules" <<EOF
+anthropic-api-key${tab}sk-ant-[A-Za-z0-9_-]{20,}
+openai-or-generic-sk-key${tab}sk-[A-Za-z0-9_-]{32,}
+voyage-api-key${tab}pa-[A-Za-z0-9_-]{32,}
+github-classic-token${tab}ghp_[A-Za-z0-9]{30,}
+github-fine-grained-token${tab}github_pat_[A-Za-z0-9_]{20,}
+aws-access-key-id${tab}AKIA[0-9A-Z]{16}
+private-key-block${tab}-----BEGIN [A-Z ]*PRIVATE KEY-----
+EOF
+
+git diff --cached --name-only --diff-filter=ACM | while IFS= read -r file; do
+	[ -n "$file" ] || continue
+	blob=$(mktemp)
+	# The staged blob, not the working tree: they can differ, and the staged
+	# version is what would actually be committed.
+	if ! git show ":$file" > "$blob" 2>/dev/null; then
+		rm -f "$blob"
+		continue
+	fi
+	# grep -I reports no match for binary files, so this also skips them.
+	if grep -Iq . "$blob" 2>/dev/null; then
+		while IFS="$tab" read -r name pattern; do
+			[ -n "$name" ] && [ -n "$pattern" ] || continue
+			# -e is required: several patterns start with '-'.
+			lines=$(grep -nE -e "$pattern" "$blob" | cut -d: -f1 | tr '\n' ' ')
+			if [ -n "$lines" ]; then
+				printf '%s\t%s\t%s\n' "$file" "$name" "${lines% }" >> "$findings"
+			fi
+		done < "$rules"
+	fi
+	rm -f "$blob"
+done
+
+[ -s "$findings" ] || exit 0
+
+echo "Commit refused: staged content looks like a real credential." >&2
+echo >&2
+# Location and rule only — never echo the matched value.
+while IFS="$tab" read -r file name lines; do
+	echo "  $file: line(s) $lines match rule '$name'" >&2
+done < "$findings"
+
+cat >&2 <<'MSG'
+
+If it IS a secret:
+  - Remove it from the file. Secrets belong in .env (gitignored) or a
+    secrets manager, never in a tracked file.
+  - Re-stage the cleaned file.
+  - If the value ever reached a real provider, rotate it — keeping it out
+    of this commit does not un-leak anything already sent or pushed.
+
+If it is a false positive (a fixture, a doc example):
+  - Make it obviously fake and shorter, e.g. `sk-ant-replace-me`. The rules
+    need real key length to fire, so ordinary placeholders pass.
+  - Prefer fixing the fixture over loosening the rule.
+
+Do not bypass with --no-verify.
+MSG
+
+exit 1

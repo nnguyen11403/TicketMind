@@ -36,6 +36,9 @@ Residual risk is non-git only (pasted into a chat, a screenshot, a log). Rotatio
 ## Commands
 
 ```bash
+# One-time per clone: enable the repo's secret-scanning pre-commit hook.
+git config core.hooksPath .githooks
+
 # All tests (backend, Testcontainers — Docker must be running)
 cd backend && ./mvnw test -B -ntp
 
@@ -179,6 +182,7 @@ These are non-obvious choices that future code must keep consistent.
 - Commit messages are imperative ("add", not "added"), with a body that explains *why* and any non-obvious decision. The auth commit on `feature/auth` is the reference for length / depth.
 - Each PR is a single coherent slice — the auth branch is large because the slice is large, not because changes are batched.
 - Don't `--no-verify`, don't force-push. If a hook fails, fix the underlying issue.
+- `.githooks/pre-commit` blocks staged content shaped like a live credential (Anthropic, OpenAI, Voyage, GitHub, AWS, PEM blocks). It is versioned but `core.hooksPath` is local config, so each clone runs `git config core.hooksPath .githooks` once. The patterns require real key length, so `sk-ant-replace-me` and the `sk-ant-super-secret` fixture in `rag-service/tests/test_config.py` pass — if a rule fires on a fixture, shorten the fixture rather than loosening the rule.
 
 ## Where step 9 (Backend ↔ RAG wiring) left off
 
