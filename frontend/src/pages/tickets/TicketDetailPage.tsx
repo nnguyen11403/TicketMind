@@ -18,6 +18,11 @@ import { isStaff } from '@/lib/roles';
 import { formatAbsolute, formatRelative } from '@/lib/formatDate';
 import { formatError } from '@/lib/errorMessages';
 
+// Claude usually answers within a few seconds; give it a wide margin, then
+// give up rather than polling a ticket that is never going to be triaged.
+const TRIAGE_POLL_INTERVAL_MS = 3_000;
+const TRIAGE_POLL_WINDOW_MS = 2 * 60 * 1_000;
+
 export function TicketDetailPage() {
   const { id = '' } = useParams();
   const navigate = useNavigate();
@@ -28,6 +33,18 @@ export function TicketDetailPage() {
     queryKey: ['ticket', id],
     queryFn: () => getTicket(id),
     enabled: Boolean(id),
+    // Triage runs asynchronously after the backend commits the ticket, so a
+    // freshly created ticket arrives untriaged. Poll until it lands, then stop.
+    // Bounded by TRIAGE_POLL_WINDOW_MS so a ticket the RAG service never
+    // triaged (service down, unparseable reply) doesn't poll forever.
+    refetchInterval: (query) => {
+      const data = query.state.data;
+      if (!data || data.triagedAt) {
+        return false;
+      }
+      const age = Date.now() - new Date(data.createdAt).getTime();
+      return age < TRIAGE_POLL_WINDOW_MS ? TRIAGE_POLL_INTERVAL_MS : false;
+    },
   });
   const historyQuery = useQuery({
     queryKey: ['ticket', id, 'history'],
@@ -56,6 +73,8 @@ export function TicketDetailPage() {
   const isSubmitter = user?.id === ticket.submitter?.id;
   const canEditBody = isSubmitter && ticket.status === 'OPEN';
   const canCloseAsSubmitter = isSubmitter && ticket.status === 'OPEN';
+  const triagePending =
+    !ticket.triagedAt && Date.now() - new Date(ticket.createdAt).getTime() < TRIAGE_POLL_WINDOW_MS;
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_20rem] gap-6">
@@ -80,6 +99,8 @@ export function TicketDetailPage() {
               {ticket.suggestedResolution}
             </p>
           </div>
+        ) : triagePending ? (
+          <p className="mt-6 text-sm text-slate-500">Analysing this ticket…</p>
         ) : null}
 
         <section className="mt-8">

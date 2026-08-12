@@ -6,6 +6,15 @@ spring:
       ddl-auto: validate
 
 app:
+  rag:
+    # Off by default so the existing suite never reaches for a RAG service.
+    # The tests that exercise the integration flip this on explicitly and
+    # drive a MockRestServiceServer instead of a real HTTP call.
+    enabled: false
+    base-url: http://rag.test
+    internal-key: test-internal-key
+    connect-timeout: PT1S
+    read-timeout: PT2S
   jwt:
     # Deterministic 64-byte secret for tests only. Real deployments inject
     # JWT_SECRET via environment.

@@ -36,8 +36,21 @@ function renderEvent(event: TicketHistoryEvent, payload: Record<string, unknown>
       ) : (
         <span>unassigned the ticket</span>
       );
-    case 'TRIAGED':
+    case 'TRIAGED': {
+      // Written by the backend after the RAG service answers; the actor is
+      // null, so the row is attributed to "System" above.
+      const category = typeof payload.category === 'string' ? payload.category : null;
+      const priority = typeof payload.priority === 'string' ? payload.priority : null;
+      if (category && priority) {
+        return (
+          <span>
+            triaged this as <strong>{category}</strong>, priority{' '}
+            <strong>{priority.toLowerCase()}</strong>
+          </span>
+        );
+      }
       return <span>triaged the ticket</span>;
+    }
     case 'COMMENT': {
       const body = typeof payload.body === 'string' ? payload.body : '';
       return (

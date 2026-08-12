@@ -16,7 +16,7 @@ these keys:
 
 - "category": short category string (max 64 chars, e.g. "billing", "auth",
   "shipping").
-- "priority": one of "LOW", "MEDIUM", "HIGH", "URGENT".
+- "priority": one of "LOW", "MEDIUM", "HIGH", "CRITICAL".
 - "summary": one-paragraph summary of what the customer is asking (<= 500
   chars).
 - "suggested_resolution": actionable next-step guidance for the human agent

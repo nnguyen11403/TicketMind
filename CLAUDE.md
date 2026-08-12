@@ -19,9 +19,9 @@ Work is shipped one feature branch at a time off `main`. Each step is a separate
 | 5. Ticket CRUD API | `feature/ticket-crud` | pushed, 68/68 tests green |
 | 6. React frontend bootstrap | `feature/frontend-bootstrap` | pushed, 12/12 vitest green |
 | 7. Ticket UI | `feature/ticket-ui` | pushed, 21/21 vitest green |
-| 8. Python RAG service | `feature/rag-service` | **committed locally (not yet pushed)**, 37/37 pytest green (89% cov) |
-| 9. Backend ↔ RAG wiring | — | **next** |
-| 10. Full-stack docker-compose | — | pending |
+| 8. Python RAG service | `feature/rag-service` | committed locally (not yet pushed), 41/41 pytest green (89% cov) |
+| 9. Backend ↔ RAG wiring | `feature/rag-wiring` | **in progress, uncommitted** — 91/91 backend, 67/67 vitest, 41/41 pytest |
+| 10. Full-stack docker-compose | — | **next** |
 | 11. CI/CD GitHub Actions | — | pending |
 
 **Outstanding (out of Claude's control):** rotate the leaked Anthropic API key at console.anthropic.com — the previous key was committed to `.env` and must be revoked before the RAG service is wired up in step 9.
@@ -95,6 +95,18 @@ These are non-obvious choices that future code must keep consistent.
 - Per-IP rate limit (Bucket4j) on `/auth/register`, `/auth/login`, `/auth/refresh`. Limits are wired through `app.auth.rate-limit.*` in `application.yml`. `Retry-After` is surfaced via the API error envelope.
 - The IP audit column on `refresh_tokens.ip_address` is `VARCHAR(45)` — we tried `INET` first but the JPA binding round-trip is fragile and we never query as a network type.
 
+**Backend ↔ RAG wiring (step 9):**
+
+- Triage is **asynchronous and best-effort**. `TicketService` publishes `TicketCreatedEvent` / `TicketResolvedEvent`; `RagTicketListener` handles them `@Async("ragTaskExecutor")` on `AFTER_COMMIT`. `POST /tickets` therefore answers 201 with `category`/`priority`/`triagedAt` still null — the client sees them appear on a later fetch. A RAG outage never fails ticket submission.
+- `AFTER_COMMIT` is load-bearing twice over: triage must not run against a transaction that then rolls back, and the write-back reads the ticket on a second connection, which cannot see an uncommitted row.
+- `TicketTriageWriter` is a separate bean from `TicketTriageService` for the same reason `LoginAttemptRecorder` is separate from `AuthService` — the orchestration must not hold a DB connection across a multi-second Claude call, but the ticket update and its TRIAGED history row must land in one transaction. A `@Transactional` method on the same class would self-invoke past the proxy and split them.
+- **Priority vocabulary is owned by the database.** `tickets_priority_check` in V1 allows `LOW/MEDIUM/HIGH/CRITICAL` only. The RAG service originally emitted `URGENT`; that was fixed in step 9, and `TicketTriageWriter` still rejects unknown values rather than letting them reach the constraint. `TicketTriageServiceIntegrationTest` asserts every enum value round-trips, so a future drift fails loudly.
+- The TRIAGED history row has a **null actor** — no human performed it, and `ticket_history.actor_id` is nullable for exactly this case. The frontend `Timeline` renders that as "System".
+- `app.rag.enabled` defaults to **false** so a bare `mvnw spring-boot:run` works without a RAG key. When it is true, a blank `app.rag.internal-key` fails startup — silently sending unauthenticated requests would 401 on every call and look like "triage just doesn't work".
+- The RAG executor's queue is bounded and overflow is **dropped, not run on the caller**: the caller is the thread that just committed a ticket, so `CallerRunsPolicy` would turn a RAG backlog into user-visible latency on `POST /tickets`.
+- `RagClient` truncates title/body to the RAG service's limits (256 / 32000). Ticket descriptions are `TEXT` and would otherwise 422.
+- Resolved tickets are mirrored to `POST /kb/documents` keyed by `external_id = ticket UUID`. Upsert-by-external-id makes reopen-then-re-resolve idempotent.
+
 **Error envelope:**
 
 - All domain exceptions extend `com.ticketmind.backend.common.exception.ApiException` (status + stable machine code). `GlobalExceptionHandler` translates them to `ApiError { status, code, fieldErrors? }`. Exception messages are **never** returned to the client — only the code. The generic `Exception` handler logs the real cause and returns `internal_error` with HTTP 500, so internal class names / messages don't leak.
@@ -116,6 +128,8 @@ These are non-obvious choices that future code must keep consistent.
 - API errors are decoded through the backend's `{ status, code, fieldErrors? }` envelope into an `ApiError` class; user-facing copy is centralised in `src/lib/errorMessages.ts` (keyed by `code`, never showing raw messages). `Retry-After` seconds land on `ApiError.retryAfterSeconds` for rate-limit UI.
 - Form validation mirrors the backend rules with Zod (via React Hook Form + `@hookform/resolvers/zod`). The registration form's 12-char + letter + digit check exists so users see feedback before the network round-trip; the backend still enforces it.
 - The Prod SPA is served from Vite's `dist/`. In dev, the Vite server runs on `:3000` (matching `CORS_ALLOWED_ORIGINS` in `.env.example`); the Spring backend runs on `:8080`.
+
+- The detail page polls `['ticket', id]` every 3s while `triagedAt` is null, and stops after 2 minutes (`TRIAGE_POLL_WINDOW_MS`) so a ticket the RAG service never triaged doesn't poll forever. Same window drives the "Analysing this ticket…" hint. Without this the async triage would only appear on a manual refresh.
 
 **Frontend test conventions:**
 
@@ -159,21 +173,21 @@ These are non-obvious choices that future code must keep consistent.
 - Each PR is a single coherent slice — the auth branch is large because the slice is large, not because changes are batched.
 - Don't `--no-verify`, don't force-push. If a hook fails, fix the underlying issue.
 
-## Where step 8 (Python RAG service) left off
+## Where step 9 (Backend ↔ RAG wiring) left off
 
-`feature/rag-service` is committed locally; the push is still outstanding (github.com:22 was unreachable from the dev machine — retry `git push -u origin feature/rag-service`). **Shipped** (`rag-service/`):
+`feature/rag-wiring` is checked out with uncommitted work, branched off the
+still-unpushed `feature/rag-service`. **Shipped:**
 
-- `pyproject.toml` — uv project, Python >=3.13, hatchling build over `src/ticketmind_rag`, pytest (asyncio auto mode, `pythonpath = ["."]`, `--cov-fail-under=80`) and ruff (E/F/W/I/B/UP/SIM/N/ASYNC/RUF, line-length 100) config. `B008` is ignored in `deps.py`/`main.py` — `Depends(...)` in an argument default is the FastAPI convention, not the mutable-default bug.
-- `config.py` — `Settings` via pydantic-settings; secrets wrapped in `SecretStr`; `get_settings` is `lru_cache`d so tests can `cache_clear()`.
-- `db.py` — async `psycopg_pool` pool + `ensure_schema` (creates the `vector` extension, `kb_documents`, and an HNSW cosine index).
-- `embeddings.py` / `llm.py` — `Embedder` and `ChatModel` Protocols with `VoyageEmbedder`/`AnthropicChat` and `FakeEmbedder`/`FakeChat`.
-- `kb.py` — upsert-by-`external_id` and cosine k-NN search returning `1 - (embedding <=> $1)` as a similarity score.
-- `prompts.py` / `triage.py` — system prompt + user-prompt builder, and the retrieve → prompt → parse pipeline with `TriageError`.
-- `main.py` — `GET /health` (public), `POST /kb/documents`, `GET /kb/search`, `POST /triage` (all behind `X-Internal-Key`), plus the `TriageError` → 502 handler.
-- `Dockerfile`, `.env.example`, `.gitignore`.
-- 37/37 pytest green, 89% coverage: config/secret-redaction, schema validation, embedder determinism, auth on every protected route, KB persistence + retrieval ordering, and triage happy path, priority normalisation, malformed-citation filtering, and the 502 path.
+- `backend/.../rag/` — `RagProperties` (`app.rag.*`), `RagClientConfig` (RestClient with a `JdkClientHttpRequestFactory`, separate connect/read timeouts, `X-Internal-Key` default header), `RagClient` (best-effort, never throws), `TicketTriageService` (orchestration, no transaction held across the HTTP call), `TicketTriageWriter` (`@Transactional` write-back), `RagTicketListener` (`@Async` + `AFTER_COMMIT`, `@ConditionalOnProperty`), `RagAsyncConfig` (bounded `rag-` pool that drops on overflow), and the three wire DTOs.
+- `TicketService` publishes `TicketCreatedEvent` on create and `TicketResolvedEvent` on the RESOLVED transition.
+- Config: `app.rag.*` in `application.yml` (disabled by default), disabled in `application-test.yml`, `RAG_ENABLED` / `RAG_SERVICE_URL` added to the root `.env.example` and the commented backend block in `docker-compose.yml`.
+- `rag-service`: priority vocabulary changed `URGENT` → `CRITICAL` to match the backend enum and the V1 check constraint, with a parametrised regression test.
+- Frontend: detail page polls until `triagedAt` lands and shows an "Analysing this ticket…" hint; `Timeline` names the category and priority on a TRIAGED row.
+- Green: **91/91 backend** (was 68 — +9 `RagClientTest`, +7 `TicketTriageServiceIntegrationTest`, +3 `RagPropertiesTest`, +2 `RagIntegrationWiringTest`, +2 in `TicketControllerIntegrationTest`), **67/67 vitest** (was 63), **41/41 pytest** (was 37).
 
-**Step 8 is closed.** Step 9 wires the Spring backend to this service: call `POST /triage` on ticket creation with the `X-Internal-Key` secret, persist `category`/`priority`/`suggested_resolution` back onto the ticket, and mirror resolved tickets into `POST /kb/documents` so retrieval improves over time. Rotate the leaked Anthropic key first.
+**Still TODO to close step 9:** commit `feature/rag-wiring`, and push it together with `feature/rag-service` once network access to github.com is available. Neither branch has been pushed — `git push` currently times out on `github.com:22` from this machine.
+
+**Not done in step 9 (deliberate):** no end-to-end test runs the real Python service against the real backend — the RAG service is stubbed at the HTTP boundary on the Java side, and the two contracts are kept honest by matching tests on each side rather than by a shared fixture. Step 10 (docker-compose) is where a genuine cross-service smoke test becomes cheap.
 
 ## Out of scope
 

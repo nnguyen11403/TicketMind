@@ -22,6 +22,8 @@ import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.event.ApplicationEvents;
+import org.springframework.test.context.event.RecordApplicationEvents;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
@@ -39,6 +41,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 @Import(TestcontainersConfiguration.class)
+// Records the RAG integration events so the wiring can be asserted without
+// standing up a RAG service — app.rag.enabled is false in the test profile,
+// so no listener consumes them here.
+@RecordApplicationEvents
 class TicketControllerIntegrationTest {
 
 	@Autowired private MockMvc mockMvc;
@@ -47,6 +53,7 @@ class TicketControllerIntegrationTest {
 	@Autowired private TicketHistoryRepository historyRepository;
 	@Autowired private RefreshTokenRepository refreshTokenRepository;
 	@Autowired private JwtService jwtService;
+	@Autowired private ApplicationEvents events;
 
 	private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -268,12 +275,64 @@ class TicketControllerIntegrationTest {
 	}
 
 	@Test
+	void creatingATicketPublishesTheTriageEventAndStillAnswersWithoutTriageFields() throws Exception {
+		MvcResult result = mockMvc.perform(post("/tickets")
+						.header(HttpHeaders.AUTHORIZATION, bearerFor(alice))
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(objectMapper.writeValueAsString(
+								new CreateTicketRequest("Cannot log in", "reset link never arrives"))))
+				.andExpect(status().isCreated())
+				// Triage runs after commit on another thread, so the 201 the
+				// submitter gets back is deliberately untriaged. The frontend
+				// picks the values up on a later fetch.
+				.andExpect(jsonPath("$.category").doesNotExist())
+				.andExpect(jsonPath("$.priority").doesNotExist())
+				.andExpect(jsonPath("$.triagedAt").doesNotExist())
+				.andReturn();
+		UUID ticketId = UUID.fromString(
+				objectMapper.readTree(result.getResponse().getContentAsString()).get("id").asText());
+
+		assertThat(events.stream(TicketCreatedEvent.class))
+				.singleElement()
+				.extracting(TicketCreatedEvent::ticketId)
+				.isEqualTo(ticketId);
+	}
+
+	@Test
+	void resolvingATicketPublishesTheKnowledgeBaseEventButOtherTransitionsDoNot() throws Exception {
+		UUID ticketId = createTicket(alice, "Cannot log in", "reset link never arrives");
+
+		changeStatus(agent, ticketId, TicketStatus.IN_PROGRESS);
+		assertThat(events.stream(TicketResolvedEvent.class)).isEmpty();
+
+		changeStatus(agent, ticketId, TicketStatus.RESOLVED);
+		assertThat(events.stream(TicketResolvedEvent.class))
+				.singleElement()
+				.extracting(TicketResolvedEvent::ticketId)
+				.isEqualTo(ticketId);
+
+		// Reopening then re-resolving publishes again — the RAG service upserts
+		// by external id, so a second push refreshes rather than duplicates.
+		changeStatus(agent, ticketId, TicketStatus.OPEN);
+		changeStatus(agent, ticketId, TicketStatus.RESOLVED);
+		assertThat(events.stream(TicketResolvedEvent.class)).hasSize(2);
+	}
+
+	@Test
 	void unauthenticatedRequestsAreRejected() throws Exception {
 		mockMvc.perform(get("/tickets")).andExpect(status().isUnauthorized());
 		mockMvc.perform(post("/tickets")
 						.contentType(MediaType.APPLICATION_JSON)
 						.content("{}"))
 				.andExpect(status().isUnauthorized());
+	}
+
+	private void changeStatus(User actor, UUID ticketId, TicketStatus status) throws Exception {
+		mockMvc.perform(post("/tickets/" + ticketId + "/status")
+						.header(HttpHeaders.AUTHORIZATION, bearerFor(actor))
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(objectMapper.writeValueAsString(new ChangeStatusRequest(status))))
+				.andExpect(status().isOk());
 	}
 
 	private UUID createTicket(User submitter, String title, String description) throws Exception {

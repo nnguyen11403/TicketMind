@@ -11,7 +11,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-Priority = Literal["LOW", "MEDIUM", "HIGH", "URGENT"]
+Priority = Literal["LOW", "MEDIUM", "HIGH", "CRITICAL"]
 
 
 class KbDocumentIn(BaseModel):

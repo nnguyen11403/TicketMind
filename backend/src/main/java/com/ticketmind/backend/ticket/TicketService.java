@@ -14,6 +14,7 @@ import com.ticketmind.backend.ticket.dto.UpdateTicketRequest;
 import com.ticketmind.backend.user.User;
 import com.ticketmind.backend.user.UserRepository;
 import com.ticketmind.backend.user.UserRole;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -35,6 +36,7 @@ public class TicketService {
 	private final TicketHistoryRepository historyRepository;
 	private final UserRepository userRepository;
 	private final ObjectMapper objectMapper;
+	private final ApplicationEventPublisher events;
 	private final Clock clock;
 
 	public TicketService(
@@ -42,11 +44,13 @@ public class TicketService {
 			TicketHistoryRepository historyRepository,
 			UserRepository userRepository,
 			ObjectMapper objectMapper,
+			ApplicationEventPublisher events,
 			Clock clock) {
 		this.ticketRepository = ticketRepository;
 		this.historyRepository = historyRepository;
 		this.userRepository = userRepository;
 		this.objectMapper = objectMapper;
+		this.events = events;
 		this.clock = clock;
 	}
 
@@ -57,6 +61,10 @@ public class TicketService {
 		ticketRepository.save(ticket);
 		recordHistory(ticket, submitter, TicketHistoryEventType.CREATED, Map.of(
 				"title", ticket.getTitle()));
+		// Delivered after commit, on the RAG executor — see RagTicketListener.
+		// The 201 response therefore carries a null category/priority and the
+		// client sees them appear on a later fetch.
+		events.publishEvent(new TicketCreatedEvent(ticket.getId()));
 		// Re-fetch with eager submitter so the caller can serialise without
 		// hitting a closed session on the lazy proxy.
 		return ticketRepository.findWithUsersById(ticket.getId()).orElseThrow();
@@ -116,6 +124,11 @@ public class TicketService {
 		recordHistory(ticket, actorUser, eventType, Map.of(
 				"from", previous.name(),
 				"to", request.status().name()));
+		if (request.status() == TicketStatus.RESOLVED) {
+			// Feed the resolved ticket back into the RAG knowledge base so it
+			// becomes retrievable context for future triage.
+			events.publishEvent(new TicketResolvedEvent(ticket.getId()));
+		}
 		return ticket;
 	}
 

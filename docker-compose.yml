@@ -30,6 +30,7 @@ services:
   #     SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
   #     SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
   #     JWT_SECRET: ${JWT_SECRET}
+  #     RAG_ENABLED: "true"
   #     RAG_SERVICE_URL: http://rag-service:8000
   #     RAG_INTERNAL_API_KEY: ${RAG_INTERNAL_API_KEY}
   #   ports:

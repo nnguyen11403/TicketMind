@@ -76,6 +76,20 @@ app:
     # false in the dev profile to allow local http://localhost testing.
     secure: true
     same-site: Strict
+  rag:
+    # Triage and knowledge-base mirroring are best-effort enrichment. Turning
+    # this off leaves tickets untriaged; it never breaks ticket submission.
+    # Defaults off so a bare `mvnw spring-boot:run` works without a RAG key;
+    # .env.example and docker-compose turn it on. When it IS on, a blank
+    # internal-key fails startup rather than silently 401-ing every call.
+    enabled: ${RAG_ENABLED:false}
+    base-url: ${RAG_SERVICE_URL:http://localhost:8000}
+    # Must match RAG_INTERNAL_API_KEY on the Python service.
+    internal-key: ${RAG_INTERNAL_API_KEY:}
+    connect-timeout: PT2S
+    # Generous because this covers a Claude round-trip, not just a hop to a
+    # local service. It runs off the request thread, so it costs no user latency.
+    read-timeout: PT45S
   rate-limit:
     # Per-IP buckets sized for the expected human-traffic shape on auth
     # endpoints. Swap for Redis-backed buckets in multi-instance deploys.

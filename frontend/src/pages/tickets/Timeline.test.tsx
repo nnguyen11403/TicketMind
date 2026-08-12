@@ -36,6 +36,21 @@ describe('Timeline', () => {
     expect(screen.getByText(/triaged the ticket/i)).toBeInTheDocument();
   });
 
+  it('names the category and priority on a TRIAGED event and attributes it to System', () => {
+    render(
+      <Timeline
+        entries={[
+          // The backend writes this row with a null actor — nobody performed it.
+          entry('TRIAGED', { category: 'billing', priority: 'HIGH', summary: 's' }, null),
+        ]}
+      />,
+    );
+    expect(screen.getByText(/triaged this as/i)).toBeInTheDocument();
+    expect(screen.getByText('billing')).toBeInTheDocument();
+    expect(screen.getByText('high')).toBeInTheDocument();
+    expect(screen.getByText(/system/i)).toBeInTheDocument();
+  });
+
   it('expands STATUS_CHANGED into a from → to sentence', () => {
     render(<Timeline entries={[entry('STATUS_CHANGED', { from: 'OPEN', to: 'IN_PROGRESS' })]} />);
     expect(screen.getByText(/changed status from/i)).toBeInTheDocument();
