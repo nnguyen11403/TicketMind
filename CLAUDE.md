@@ -19,8 +19,8 @@ Work is shipped one feature branch at a time off `main`. Each step is a separate
 | 5. Ticket CRUD API | `feature/ticket-crud` | pushed, 68/68 tests green |
 | 6. React frontend bootstrap | `feature/frontend-bootstrap` | pushed, 12/12 vitest green |
 | 7. Ticket UI | `feature/ticket-ui` | pushed, 21/21 vitest green |
-| 8. Python RAG service | `feature/rag-service` | committed locally (not yet pushed), 41/41 pytest green (89% cov) |
-| 9. Backend ↔ RAG wiring | `feature/rag-wiring` | **in progress, uncommitted** — 91/91 backend, 67/67 vitest, 41/41 pytest |
+| 8. Python RAG service | `feature/rag-service` | pushed, 41/41 pytest green (89% cov) |
+| 9. Backend ↔ RAG wiring | `feature/rag-wiring` | pushed, 91/91 backend + 67/67 vitest + 41/41 pytest green |
 | 10. Full-stack docker-compose | — | **next** |
 | 11. CI/CD GitHub Actions | — | pending |
 
@@ -175,8 +175,8 @@ These are non-obvious choices that future code must keep consistent.
 
 ## Where step 9 (Backend ↔ RAG wiring) left off
 
-`feature/rag-wiring` is checked out with uncommitted work, branched off the
-still-unpushed `feature/rag-service`. **Shipped:**
+`feature/rag-wiring` is pushed, branched off `feature/rag-service` (also
+pushed). **Shipped:**
 
 - `backend/.../rag/` — `RagProperties` (`app.rag.*`), `RagClientConfig` (RestClient with a `JdkClientHttpRequestFactory`, separate connect/read timeouts, `X-Internal-Key` default header), `RagClient` (best-effort, never throws), `TicketTriageService` (orchestration, no transaction held across the HTTP call), `TicketTriageWriter` (`@Transactional` write-back), `RagTicketListener` (`@Async` + `AFTER_COMMIT`, `@ConditionalOnProperty`), `RagAsyncConfig` (bounded `rag-` pool that drops on overflow), and the three wire DTOs.
 - `TicketService` publishes `TicketCreatedEvent` on create and `TicketResolvedEvent` on the RESOLVED transition.
@@ -185,7 +185,7 @@ still-unpushed `feature/rag-service`. **Shipped:**
 - Frontend: detail page polls until `triagedAt` lands and shows an "Analysing this ticket…" hint; `Timeline` names the category and priority on a TRIAGED row.
 - Green: **91/91 backend** (was 68 — +9 `RagClientTest`, +7 `TicketTriageServiceIntegrationTest`, +3 `RagPropertiesTest`, +2 `RagIntegrationWiringTest`, +2 in `TicketControllerIntegrationTest`), **67/67 vitest** (was 63), **41/41 pytest** (was 37).
 
-**Still TODO to close step 9:** commit `feature/rag-wiring`, and push it together with `feature/rag-service` once network access to github.com is available. Neither branch has been pushed — `git push` currently times out on `github.com:22` from this machine.
+**Step 9 is closed.** Step 10 stands up the full docker-compose: uncomment the `backend`, `rag-service`, and `frontend` services (the backend block already carries `RAG_ENABLED`/`RAG_SERVICE_URL`/`RAG_INTERNAL_API_KEY`), and add the cross-service smoke test that this slice could not cheaply write. Rotate the leaked Anthropic key before anything actually calls Claude.
 
 **Not done in step 9 (deliberate):** no end-to-end test runs the real Python service against the real backend — the RAG service is stubbed at the HTTP boundary on the Java side, and the two contracts are kept honest by matching tests on each side rather than by a shared fixture. Step 10 (docker-compose) is where a genuine cross-service smoke test becomes cheap.
 
