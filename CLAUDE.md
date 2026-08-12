@@ -18,9 +18,9 @@ Work is shipped one feature branch at a time off `main`. Each step is a separate
 | 4. Auth (JWT + BCrypt + refresh rotation) | `feature/auth` | pushed, 58/58 tests green |
 | 5. Ticket CRUD API | `feature/ticket-crud` | pushed, 68/68 tests green |
 | 6. React frontend bootstrap | `feature/frontend-bootstrap` | pushed, 12/12 vitest green |
-| 7. Ticket UI | `feature/ticket-ui` | **in progress, uncommitted, 21/21 vitest green** |
-| 8. Python RAG service | — | pending |
-| 9. Backend ↔ RAG wiring | — | pending |
+| 7. Ticket UI | `feature/ticket-ui` | pushed, 21/21 vitest green |
+| 8. Python RAG service | `feature/rag-service` | **committed locally (not yet pushed)**, 37/37 pytest green (89% cov) |
+| 9. Backend ↔ RAG wiring | — | **next** |
 | 10. Full-stack docker-compose | — | pending |
 | 11. CI/CD GitHub Actions | — | pending |
 
@@ -51,9 +51,20 @@ cd frontend && npm test             # vitest run (jsdom + MSW)
 cd frontend && npm run typecheck    # tsc -b --noEmit
 cd frontend && npm run lint         # oxlint src
 cd frontend && npm run format       # prettier --write
+
+# RAG service (uv; needs Docker for Testcontainers)
+cd rag-service && uv sync --all-groups
+cd rag-service && DOCKER_HOST=unix:///var/run/docker.sock uv run pytest
+cd rag-service && uv run ruff check .          # lint
+cd rag-service && uv run ruff format .         # format
+cd rag-service && uv run uvicorn ticketmind_rag.main:app --reload --port 8000
 ```
 
-The RAG service hasn't been built yet — no commands for it.
+**`DOCKER_HOST` is required for the RAG tests on macOS.** Docker Desktop's default
+context points at `~/.docker/run/docker.sock`, and Testcontainers' Ryuk reaper
+cannot bind-mount that path into a container (`mkdir /host_mnt/…/docker.sock:
+operation not supported`). Pointing at `/var/run/docker.sock` — the symlink Docker
+Desktop special-cases — makes it work. The Java Testcontainers setup is unaffected.
 
 ## Tech stack (as actually built)
 
@@ -66,7 +77,8 @@ The RAG service hasn't been built yet — no commands for it.
 - **JPA Auditing** for `created_at` / `updated_at`
 - **React 19 + TypeScript 6 + Vite 8** frontend with React Router v7, TanStack Query v5, React Hook Form + Zod, Tailwind CSS v4
 - Frontend tests: Vitest 3 + Testing Library + MSW 2 (jsdom); MSW's `onUnhandledRequest: 'error'` catches missing handlers
-- RAG service (planned): Python + FastAPI + LangChain + Anthropic Claude
+- RAG service: **Python 3.13** + FastAPI, managed with **uv**; `psycopg` 3 async pool + `pgvector`; `langchain-anthropic` for chat (default model **`claude-opus-5`**), `voyageai` for embeddings (`voyage-3`, 1024-dim); Pydantic Settings for config; **ruff** for lint + format
+- RAG tests: pytest + `pytest-asyncio` (auto mode) + `testcontainers` on `pgvector/pgvector:pg16`, `asgi-lifespan` for the FastAPI lifespan, `--cov-fail-under=80`
 
 ## Architecture decisions baked in
 
@@ -112,6 +124,17 @@ These are non-obvious choices that future code must keep consistent.
 - `renderWithProviders` (`src/test/renderApp.tsx`) wraps in `MemoryRouter` + `QueryClientProvider` + `AuthProvider`. `AuthProvider` fires a silent `/auth/refresh` on mount, so tests must mock that endpoint (return 401 for anonymous state).
 - `.env.test` sets `VITE_API_BASE_URL=http://api.test` — MSW handlers key off that same base.
 
+**RAG service (step 8):**
+
+- The service owns its own `kb_documents` table, created with `IF NOT EXISTS` at startup — it does **not** read the backend's `ticket_embeddings`. Flyway lives with the Java service; a cross-service Flyway migration would couple the two deploys, and a schema mistake here would be able to corrupt ticket/auth data. The embedding dimension is templated into the DDL from `RAG_EMBEDDING_DIM` so a model swap is a config change plus a re-embed.
+- Vectors are bound as `pgvector.Vector`, never as plain lists. A bare `list[float]` is sent as `float8[]`, which Postgres can only coerce when a target column supplies the type — so `INSERT` silently works while `embedding <=> %s` in the search query fails with "No operator matches the given name and argument types".
+- `AnthropicChat` passes **no `temperature`**. Claude Opus 5 (and every Opus 4.7+ model) rejects sampling parameters with a 400; determinism is steered by the prompt instead.
+- Auth is a single shared secret on `X-Internal-Key`, compared with `hmac.compare_digest`. Missing and wrong keys both return `401 unauthorized` — inside the compose network, a foothold on another container shouldn't be able to enumerate whether a header is needed at all.
+- `Embedder` and `ChatModel` are `Protocol`s with `Fake*` implementations, so the whole HTTP surface is testable without a Voyage/Anthropic key. `FakeEmbedder` hashes the input to a unit vector, which makes cosine ordering meaningful and deterministic.
+- Long-lived objects (pool, embedder, chat, repo, triage service) live on `app.state`, wired in the lifespan, and dependency callables pull them off the `Request`. Tests pre-seed `app.state` before entering the lifespan, so the lifespan only builds what isn't already there — and only closes the pool it opened (`app.state._owns_pool`).
+- The LLM contract is a bare JSON object. `_extract_json` pulls the first `{...}` block out of the reply because real replies occasionally wrap in prose or fences; anything unparseable raises `TriageError` → **502 `upstream_error`**, so the backend treats it as an upstream fault rather than a bad request. Citation scores come from the retrieval results, never from the model's own confidence claims.
+- The Dockerfile execs `/app/.venv/bin/uvicorn` directly. `uv run` would re-resolve the environment at container start, which needs network access the container doesn't have.
+
 ## Test conventions
 
 - **Integration tests use Testcontainers, not mocks.** The `TestcontainersConfiguration` spins up a real pgvector container; tests like `AuthFlowIntegrationTest` hit the real DB. Do **not** introduce `@MockBean` on repositories — the original CLAUDE.md guidance to mock the DB is superseded.
@@ -119,10 +142,12 @@ These are non-obvious choices that future code must keep consistent.
 - Do **not** put `@Transactional` on integration test classes that exercise services using `Propagation.REQUIRES_NEW` (e.g. failed-login bookkeeping, family revocation). Spring's test-class transaction rolls back the outer transaction, but REQUIRES_NEW inner transactions can't see uncommitted outer state — tests fail with confusing "user not found" errors. Use explicit `@BeforeEach` cleanup via `repository.deleteAllInBatch()` instead.
 - `ObjectMapper` is **not** an autowireable bean in `@SpringBootTest` slices here — instantiate `new ObjectMapper()` in tests.
 - Run `./mvnw test` after **every** change. Don't push a branch with a red bar.
+- RAG service: same rule with `uv run pytest`. One pgvector container per session (`pg_container` is session-scoped); the `pool` fixture truncates `kb_documents` between tests rather than recreating the schema. `pythonpath = ["."]` in `pyproject.toml` is what makes `from tests.conftest import ...` resolve. Coverage is gated at 80%.
 
 ## Code style
 
 - Java: explicit braces, descriptive identifiers, no needless comments. A comment exists only when the *why* is non-obvious — a hidden constraint, a subtle invariant, a workaround for a specific Spring/Hibernate quirk. Don't comment what the code says.
+- Python: `from __future__ import annotations`, full type hints on public functions, module docstrings that explain the *why* of the module. Same comment rule as Java. `ruff format` is authoritative — don't hand-wrap lines it would rejoin.
 - Don't introduce premature abstractions. Three similar lines is fine.
 - Don't add backwards-compat shims, deprecated re-exports, or `// removed` markers when deleting code.
 - Don't write `_unused` helpers, mock layers, or "ready for X" scaffolding unless the next step actually uses them.
@@ -134,23 +159,21 @@ These are non-obvious choices that future code must keep consistent.
 - Each PR is a single coherent slice — the auth branch is large because the slice is large, not because changes are batched.
 - Don't `--no-verify`, don't force-push. If a hook fails, fix the underlying issue.
 
-## Where step 7 (Ticket UI) left off
+## Where step 8 (Python RAG service) left off
 
-`feature/ticket-ui` is checked out with uncommitted work. **Shipped:**
+`feature/rag-service` is committed locally; the push is still outstanding (github.com:22 was unreachable from the dev machine — retry `git push -u origin feature/rag-service`). **Shipped** (`rag-service/`):
 
-- `src/api/tickets.ts` — Zod-validated list/get/create/update/status/assign/comment/history calls mirroring the backend `/tickets` surface.
-- `src/pages/tickets/` — `TicketListPage` (status-chip filter + Previous/Next pagination via `useSearchParams`), `TicketCreatePage` (RHF + Zod, redirects to detail on success), `TicketDetailPage` (grid layout with body, activity, and sidebar), `Timeline` (renders every event type, expanding STATUS_CHANGED into from → to and COMMENT into a styled block), `CommentComposer`, `StaffActions` (status dropdown + Take/Unassign — the assignee picker is intentionally self-assign only until a `/users` endpoint exists).
-- `src/components/` — `StatusBadge`, `PriorityBadge`.
-- `src/lib/` — `formatDate.ts` (Intl `RelativeTimeFormat` + medium/short date), `roles.ts` (`isStaff`).
-- `App.tsx` routes: `/` → `<Navigate to="/tickets" />`; `/tickets`, `/tickets/new`, `/tickets/:id` all inside the existing `ProtectedRoute` shell. `HomePage.tsx` was removed.
-- Ticket UI decisions:
-  - Cross-tenant 404s from the backend surface as the standard "not found" error message — the UI does not distinguish them from real 404s, matching the enumeration-resistance design in the service layer.
-  - Submitters see an edit affordance only while `status === 'OPEN'`; the edit form is inline (no separate route) because the ticket already loaded and the mutation is a single PATCH.
-  - Staff sidebar (`StaffActions`) invalidates both `['ticket', id]` and `['tickets']` on mutation so the list page stays in sync when navigated back.
-  - `formatError` code table gained `invalid_ticket_state`, `agent_required`, `not_found` for the ticket flow — new backend codes go here, not into ad-hoc UI strings.
-- 21/21 vitest green: list pagination + status filter + empty state, create form + validation, detail render for submitter/staff, inline edit, and "Take ticket" self-assignment.
+- `pyproject.toml` — uv project, Python >=3.13, hatchling build over `src/ticketmind_rag`, pytest (asyncio auto mode, `pythonpath = ["."]`, `--cov-fail-under=80`) and ruff (E/F/W/I/B/UP/SIM/N/ASYNC/RUF, line-length 100) config. `B008` is ignored in `deps.py`/`main.py` — `Depends(...)` in an argument default is the FastAPI convention, not the mutable-default bug.
+- `config.py` — `Settings` via pydantic-settings; secrets wrapped in `SecretStr`; `get_settings` is `lru_cache`d so tests can `cache_clear()`.
+- `db.py` — async `psycopg_pool` pool + `ensure_schema` (creates the `vector` extension, `kb_documents`, and an HNSW cosine index).
+- `embeddings.py` / `llm.py` — `Embedder` and `ChatModel` Protocols with `VoyageEmbedder`/`AnthropicChat` and `FakeEmbedder`/`FakeChat`.
+- `kb.py` — upsert-by-`external_id` and cosine k-NN search returning `1 - (embedding <=> $1)` as a similarity score.
+- `prompts.py` / `triage.py` — system prompt + user-prompt builder, and the retrieve → prompt → parse pipeline with `TriageError`.
+- `main.py` — `GET /health` (public), `POST /kb/documents`, `GET /kb/search`, `POST /triage` (all behind `X-Internal-Key`), plus the `TriageError` → 502 handler.
+- `Dockerfile`, `.env.example`, `.gitignore`.
+- 37/37 pytest green, 89% coverage: config/secret-redaction, schema validation, embedder determinism, auth on every protected route, KB persistence + retrieval ordering, and triage happy path, priority normalisation, malformed-citation filtering, and the 502 path.
 
-**Still TODO to close step 7:** commit + push `feature/ticket-ui`.
+**Step 8 is closed.** Step 9 wires the Spring backend to this service: call `POST /triage` on ticket creation with the `X-Internal-Key` secret, persist `category`/`priority`/`suggested_resolution` back onto the ticket, and mirror resolved tickets into `POST /kb/documents` so retrieval improves over time. Rotate the leaked Anthropic key first.
 
 ## Out of scope
 

@@ -1,0 +1,88 @@
+[project]
+name = "ticketmind-rag"
+version = "0.1.0"
+description = "TicketMind RAG service — auto-triage tickets via pgvector + Anthropic Claude."
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi>=0.121.0",
+    "uvicorn[standard]>=0.40.0",
+    "pydantic>=2.11.0",
+    "pydantic-settings>=2.11.0",
+    "psycopg[binary]>=3.3.0",
+    "psycopg-pool>=3.3.0",
+    "pgvector>=0.4.0",
+    "anthropic>=0.75.0",
+    "langchain-anthropic>=0.3.30",
+    "langchain-core>=0.3.100",
+    "voyageai>=0.3.6",
+    "httpx>=0.28.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.5.0",
+    "pytest-asyncio>=1.1.0",
+    "pytest-cov>=7.0.0",
+    "testcontainers[postgres]>=4.13.0",
+    "ruff>=0.14.0",
+    "asgi-lifespan>=2.1.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ticketmind_rag"]
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+addopts = [
+    "-ra",
+    "--strict-markers",
+    "--cov=ticketmind_rag",
+    "--cov-report=term-missing",
+    "--cov-fail-under=80",
+]
+testpaths = ["tests"]
+pythonpath = ["."]
+asyncio_mode = "auto"
+
+[tool.coverage.run]
+source = ["src/ticketmind_rag"]
+branch = true
+
+[tool.coverage.report]
+exclude_also = [
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.:",
+    "pragma: no cover",
+]
+
+[tool.ruff]
+target-version = "py313"
+line-length = 100
+
+[tool.ruff.lint]
+select = [
+    "E", "F", "W",   # pycodestyle + pyflakes
+    "I",             # isort
+    "B",             # flake8-bugbear
+    "UP",            # pyupgrade
+    "SIM",           # flake8-simplify
+    "N",             # pep8-naming
+    "ASYNC",         # flake8-async
+    "RUF",           # ruff-specific
+]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["N802"]
+# `Depends(...)`/`Query(...)` in argument defaults is the FastAPI calling
+# convention, not the mutable-default bug B008 is aimed at.
+"src/ticketmind_rag/deps.py" = ["B008"]
+"src/ticketmind_rag/main.py" = ["B008"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["ticketmind_rag", "tests"]

@@ -1,0 +1,30 @@
+# Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Build / packaging
+build/
+dist/
+*.egg-info/
+
+# Test / lint caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# uv lock is intentionally committed at the repo top-level workflow; keep the
+# service-local lockfile out until we standardise on a single uv workspace.
+uv.lock
+
+# Editors
+.idea/
+.vscode/
