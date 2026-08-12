@@ -78,6 +78,24 @@ code=$(curl -s -o /dev/null -w '%{http_code}' "$FRONTEND_URL/tickets/does-not-ex
 [ "$code" = "200" ] && ok "deep link /tickets/... falls back to the SPA (200)" \
 	|| bad "deep link returned $code, SPA fallback is broken"
 
+# VITE_API_BASE_URL is inlined by Vite at build time, so a wrong value ships a
+# broken SPA that every other check still passes: nginx serves it, healthchecks
+# are green, and only a real browser fails. Assert on the built bundle itself.
+asset=$(curl -fsS "$FRONTEND_URL/" 2>/dev/null | grep -o '/assets/[^"]*\.js' | head -1)
+if [ -n "$asset" ]; then
+	bundle=$(curl -fsS "$FRONTEND_URL$asset" 2>/dev/null)
+	if printf '%s' "$bundle" | grep -qE 'https?://(backend|rag-service|postgres)[:/]'; then
+		bad "the bundle points at an internal compose hostname — the browser cannot resolve it"
+	else
+		ok "no internal compose hostname baked into the bundle"
+	fi
+	printf '%s' "$bundle" | grep -qF "$BACKEND_URL" \
+		&& ok "bundle is built against $BACKEND_URL" \
+		|| note "bundle does not reference $BACKEND_URL — check the VITE_API_BASE_URL build arg"
+else
+	bad "could not find a hashed JS bundle in index.html"
+fi
+
 echo
 echo "=== 3. RAG service rejects unauthenticated calls ==="
 code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$RAG_URL/triage" \
@@ -169,6 +187,31 @@ if [ -n "$token" ]; then
 			|| bad "ticket unreadable after triage attempt ($still_there)"
 	fi
 fi
+
+echo
+echo "=== 5. CORS between the browser origin and the API ==="
+# Nothing in any unit suite covers this, and it is uniquely dangerous: a wrong
+# CORS_ALLOWED_ORIGINS leaves every service healthy and every test green while
+# the app is completely broken in a real browser. FRONTEND_URL is the origin
+# the SPA is actually served from, so it is the one that has to be allowed.
+preflight=$(curl -s -i -X OPTIONS "$BACKEND_URL/tickets" \
+	-H "Origin: $FRONTEND_URL" \
+	-H 'Access-Control-Request-Method: POST' \
+	-H 'Access-Control-Request-Headers: authorization,content-type' 2>/dev/null)
+printf '%s' "$preflight" | grep -qi "^access-control-allow-origin: $FRONTEND_URL" \
+	&& ok "preflight from $FRONTEND_URL is allowed" \
+	|| bad "preflight from $FRONTEND_URL was NOT allowed — check CORS_ALLOWED_ORIGINS against FRONTEND_PORT"
+# The refresh cookie is HttpOnly and cross-origin, so credentials must be allowed
+# or silent re-auth breaks on every page load.
+printf '%s' "$preflight" | grep -qi '^access-control-allow-credentials: true' \
+	&& ok "credentials allowed (the tm_refresh cookie needs this)" \
+	|| bad "Access-Control-Allow-Credentials missing — silent refresh will fail in the browser"
+
+evil=$(curl -s -i -X OPTIONS "$BACKEND_URL/tickets" \
+	-H 'Origin: https://evil.example' -H 'Access-Control-Request-Method: POST' 2>/dev/null)
+printf '%s' "$evil" | grep -qi '^access-control-allow-origin' \
+	&& bad "an untrusted origin was granted CORS access" \
+	|| ok "untrusted origin is refused"
 
 echo
 echo "=========================================="

@@ -22,7 +22,7 @@ Work is shipped one feature branch at a time off `main`. Each step is a separate
 | 8. Python RAG service | `feature/rag-service` | pushed, 41/41 pytest green (89% cov) |
 | 9. Backend ↔ RAG wiring | `feature/rag-wiring` | pushed, 91/91 backend + 67/67 vitest + 41/41 pytest green |
 | 10. Full-stack docker-compose | `feature/docker-compose` | pushed — 93 backend + 67 vitest + 41 pytest + 14/14 smoke |
-| 11. CI/CD GitHub Actions | `feature/docker-compose` | **in progress, uncommitted** — four-job workflow, all commands verified locally |
+| 11. CI/CD GitHub Actions | `feature/docker-compose` | pushed — **all four jobs green on GitHub** |
 
 **Anthropic API key — investigated 2026-08-12, not leaked via this repo.** An earlier note here claimed the key had been committed to `.env` and treated it as a blocker for step 9. That was wrong. Verified:
 
@@ -142,6 +142,7 @@ These are non-obvious choices that future code must keep consistent.
 - **The stack job must work without secrets.** PRs from forks never receive repository secrets, so the CI `.env` falls back to a placeholder Anthropic key and an empty Voyage key. The smoke test degrades gracefully — triage reports as a NOTE rather than a failure — so the job still asserts the other 11 things and exits 0. Do not make triage a hard assertion there or every fork PR goes red.
 - `JWT_SECRET` is generated with `openssl rand -base64 64` and `POSTGRES_PASSWORD` with `rand -hex 24`. The hex is deliberate: the password is interpolated into the RAG service's `DATABASE_URL`, so a base64 `/` or `+` would corrupt the connection string.
 - Push triggers on every branch because all work here happens on unmerged feature branches; a PR therefore runs both the push and PR workflows. Accepted tradeoff — restricting push to `main` would mean no CI at all until branches start merging.
+- `scripts/smoke-test.sh` now also asserts **CORS** and **what URL is baked into the SPA bundle**. Both are silent-failure classes that no unit suite can reach: a wrong `CORS_ALLOWED_ORIGINS` leaves every service healthy and every test green while the app is unusable in a browser, and `VITE_API_BASE_URL` is inlined by Vite at build time, so building the image with a compose service name ships a bundle whose API calls the browser cannot resolve.
 - The `rag-service` image is a **multi-stage build**: `build-essential` and `uv` stay in the build stage. That took it from 1.76GB to 548MB, which matters because CI rebuilds it on every run. Its healthcheck uses the venv interpreter rather than curl, so the runtime stage installs no apt packages at all.
 
 **Error envelope:**
@@ -226,13 +227,11 @@ bodies never reached FastAPI. See the step 10 notes above.
 above) and a multi-stage `rag-service/Dockerfile` that cut the image from
 1.76GB to 548MB.
 
-**Verified locally, not yet on a runner:** every command each job runs was
-executed on this machine — all three suites, `npm run format:check`, the
-compose build, and the smoke test (14/14 with real keys). The CI `.env`
-generator was validated against `docker compose config`. What has *not* been
-observed is the workflow running on a GitHub runner; the first push will be
-the real test, and Linux-vs-macOS differences are the likely source of any
-surprise.
+**Verified on a cold stack and on CI.** `docker compose down -v` followed by
+`up --build` reproduces the clone-and-run path: Flyway applies V1 and V2 to an
+empty schema, the vector-extension ordering holds with no race, and the smoke
+test passes **19/19** with real keys. The GitHub workflow was green on its
+first run.
 
 **Known rough edges, deliberately not fixed:**
 
@@ -247,8 +246,8 @@ surprise.
 - No image publishing. That needs a registry and credentials — a deployment
   decision, not a CI one.
 
-**Still TODO to close step 11:** commit + push, then watch the first run and
-fix whatever the runner disagrees with.
+**Step 11 is closed.** The workflow ran green on a GitHub runner on its first
+try — all four jobs, including the compose build and smoke test.
 
 ## Out of scope
 
