@@ -58,10 +58,11 @@ public class TicketController {
 	public PagedResponse<TicketSummaryResponse> list(
 			@AuthenticationPrincipal JwtPrincipal principal,
 			@RequestParam(required = false) TicketStatus status,
+			@RequestParam(defaultValue = "NEWEST") TicketSort sort,
 			@RequestParam(defaultValue = "0") int page,
 			@RequestParam(defaultValue = "20") int size) {
 		return PagedResponse.of(
-				ticketService.list(principal, status, page, size),
+				ticketService.list(principal, status, sort, page, size),
 				TicketSummaryResponse::from);
 	}
 

@@ -27,7 +27,7 @@ public class UserController {
 	}
 
 	/**
-	 * Staff roster. Exists so an assignee picker has something to call — the
+	 * Staff roster. Exists so an assignee picker has something to call, the
 	 * ticket UI could previously only self-assign because no endpoint listed
 	 * agents. Staff-only: a submitter has no business enumerating accounts.
 	 */

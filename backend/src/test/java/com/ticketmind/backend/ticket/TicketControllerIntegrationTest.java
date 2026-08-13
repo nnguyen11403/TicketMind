@@ -42,7 +42,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @ActiveProfiles("test")
 @Import(TestcontainersConfiguration.class)
 // Records the RAG integration events so the wiring can be asserted without
-// standing up a RAG service — app.rag.enabled is false in the test profile,
+// standing up a RAG service, app.rag.enabled is false in the test profile,
 // so no listener consumes them here.
 @RecordApplicationEvents
 class TicketControllerIntegrationTest {
@@ -85,7 +85,7 @@ class TicketControllerIntegrationTest {
 				.andExpect(jsonPath("$.status").value("OPEN"))
 				.andExpect(jsonPath("$.submitter.email").value("alice@example.com"));
 
-		// Bob's ticket is invisible to Alice — must surface as 404, not 403.
+		// Bob's ticket is invisible to Alice, must surface as 404, not 403.
 		mockMvc.perform(get("/tickets/" + bobTicket).header(HttpHeaders.AUTHORIZATION, bearerFor(alice)))
 				.andExpect(status().isNotFound())
 				.andExpect(jsonPath("$.code").value("ticket_not_found"));
@@ -123,7 +123,7 @@ class TicketControllerIntegrationTest {
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.title").value("Edited"));
 
-		// Agent moves ticket to IN_PROGRESS — now Alice can no longer edit body.
+		// Agent moves ticket to IN_PROGRESS, now Alice can no longer edit body.
 		mockMvc.perform(post("/tickets/" + id + "/status")
 						.header(HttpHeaders.AUTHORIZATION, bearerFor(agent))
 						.contentType(MediaType.APPLICATION_JSON)
@@ -162,14 +162,14 @@ class TicketControllerIntegrationTest {
 	void onlyStaffCanAssignAndOnlyToAgentsOrAdmins() throws Exception {
 		UUID id = createTicket(alice, "T", "d");
 
-		// USER cannot assign — surfaces as 404 (same as any non-authz read).
+		// USER cannot assign, surfaces as 404 (same as any non-authz read).
 		mockMvc.perform(post("/tickets/" + id + "/assign")
 						.header(HttpHeaders.AUTHORIZATION, bearerFor(alice))
 						.contentType(MediaType.APPLICATION_JSON)
 						.content(objectMapper.writeValueAsString(new AssignTicketRequest(agent.getId()))))
 				.andExpect(status().isNotFound());
 
-		// Agent tries to assign to a plain USER — rejected as agent_required.
+		// Agent tries to assign to a plain USER, rejected as agent_required.
 		mockMvc.perform(post("/tickets/" + id + "/assign")
 						.header(HttpHeaders.AUTHORIZATION, bearerFor(agent))
 						.contentType(MediaType.APPLICATION_JSON)
@@ -211,7 +211,7 @@ class TicketControllerIntegrationTest {
 				.andExpect(jsonPath("$[0].eventType").value("CREATED"))
 				.andExpect(jsonPath("$[1].eventType").value("COMMENT"));
 
-		// Bob has no relationship to the ticket — history call surfaces 404.
+		// Bob has no relationship to the ticket, history call surfaces 404.
 		mockMvc.perform(get("/tickets/" + id + "/history")
 						.header(HttpHeaders.AUTHORIZATION, bearerFor(bob)))
 				.andExpect(status().isNotFound());
@@ -311,7 +311,7 @@ class TicketControllerIntegrationTest {
 				.extracting(TicketResolvedEvent::ticketId)
 				.isEqualTo(ticketId);
 
-		// Reopening then re-resolving publishes again — the RAG service upserts
+		// Reopening then re-resolving publishes again, the RAG service upserts
 		// by external id, so a second push refreshes rather than duplicates.
 		changeStatus(agent, ticketId, TicketStatus.OPEN);
 		changeStatus(agent, ticketId, TicketStatus.RESOLVED);

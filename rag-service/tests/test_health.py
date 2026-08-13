@@ -11,6 +11,6 @@ async def test_health_returns_ok_and_version(client: AsyncClient) -> None:
 
 
 async def test_health_is_unauthenticated(client: AsyncClient) -> None:
-    # No X-Internal-Key header — the health probe must still succeed.
+    # No X-Internal-Key header, the health probe must still succeed.
     response = await client.get("/health")
     assert response.status_code == 200

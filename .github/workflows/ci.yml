@@ -92,7 +92,7 @@ jobs:
       - name: Write CI .env
         # Real provider keys are optional. Forks and PR builds do not get
         # repository secrets, so the fallbacks keep this job runnable
-        # everywhere — the smoke test degrades to reporting that triage did
+        # everywhere. The smoke test degrades to reporting that triage did
         # not land, and still asserts the other 11 things.
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}

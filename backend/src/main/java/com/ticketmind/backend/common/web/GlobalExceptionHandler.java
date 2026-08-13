@@ -9,6 +9,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
@@ -46,7 +47,7 @@ public class GlobalExceptionHandler {
 	// Method security (@PreAuthorize) throws inside the controller invocation,
 	// so it lands here rather than in the security filter chain. Without this
 	// it fell through to the generic handler and every denial answered 500
-	// instead of 403 — wrong status, and it reads as a server bug to clients.
+	// instead of 403. Wrong status, and it reads as a server bug to clients.
 	// AuthorizationDeniedException extends AccessDeniedException, so one
 	// handler covers both.
 	@ExceptionHandler(AccessDeniedException.class)
@@ -54,6 +55,20 @@ public class GlobalExceptionHandler {
 		log.debug("access denied: {}", ex.getMessage());
 		return ResponseEntity.status(HttpStatus.FORBIDDEN)
 				.body(ApiError.of(HttpStatus.FORBIDDEN.value(), "forbidden"));
+	}
+
+	// A bad enum value or a malformed UUID in a path or query parameter fails
+	// during binding, before any controller code runs. Without this it reached
+	// the generic handler and answered 500, which reads as a server fault for
+	// what is plainly a bad request.
+	@ExceptionHandler(MethodArgumentTypeMismatchException.class)
+	public ResponseEntity<ApiError> handleTypeMismatch(MethodArgumentTypeMismatchException ex) {
+		log.debug("unbindable parameter {}: {}", ex.getName(), ex.getMessage());
+		// Only the parameter name is echoed. The rejected value is caller-supplied
+		// and has no business being reflected back.
+		return ResponseEntity.badRequest().body(ApiError.of(
+				HttpStatus.BAD_REQUEST.value(), "validation_error",
+				List.of(new ApiError.FieldError(ex.getName(), "invalid"))));
 	}
 
 	@ExceptionHandler(NoResourceFoundException.class)

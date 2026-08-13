@@ -18,7 +18,7 @@ public record RagProperties(
 
 	public RagProperties {
 		// Validated here rather than with @NotBlank because the key is only
-		// required when the integration is switched on — the test profile and
+		// required when the integration is switched on, the test profile and
 		// any deployment running without triage leaves it empty on purpose.
 		if (enabled && (internalKey == null || internalKey.isBlank())) {
 			throw new IllegalStateException(

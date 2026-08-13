@@ -6,7 +6,7 @@ Two big decisions made here:
   time, so we boot it once, wipe rows between tests, and let the schema
   survive the whole run.
 - **App instances receive fakes for embedder + chat.** We're testing our
-  glue code and SQL, not Anthropic's or Voyage's — plugging real clients into
+  glue code and SQL, not Anthropic's or Voyage's, plugging real clients into
   a unit-test suite would be slow, flaky, and costs actual money.
 """
 

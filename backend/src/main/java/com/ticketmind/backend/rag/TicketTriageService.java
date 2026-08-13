@@ -68,7 +68,7 @@ public class TicketTriageService {
 	 * and needs to know whether it worked, so silently degrading the way the
 	 * post-commit listener does would be useless here.
 	 *
-	 * <p>It overwrites an existing result and appends a second TRIAGED row —
+	 * <p>It overwrites an existing result and appends a second TRIAGED row -
 	 * the audit trail should record that a human asked for another opinion.
 	 *
 	 * <p>Motivating case: provider rate limits. Voyage's free tier allows 3
@@ -92,7 +92,7 @@ public class TicketTriageService {
 				.triage(ticketId, snapshot.title(), snapshot.description())
 				.orElseThrow(TriageFailedException::new);
 		if (!triageWriter.applyTriage(ticketId, result, true)) {
-			// The call succeeded but the result was unusable — an unknown
+			// The call succeeded but the result was unusable, an unknown
 			// priority, or the ticket vanished mid-flight.
 			throw new TriageFailedException();
 		}
@@ -119,7 +119,7 @@ public class TicketTriageService {
 	}
 
 	// No @Transactional: this is called from within the class, so a proxy-based
-	// annotation would be silently inert. It doesn't need one — findById runs
+	// annotation would be silently inert. It doesn't need one, findById runs
 	// in the repository's own transaction and every field read here is eager.
 	private Snapshot loadSnapshot(UUID ticketId) {
 		return ticketRepository.findById(ticketId)

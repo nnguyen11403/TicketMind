@@ -17,7 +17,7 @@ interface RefreshResult {
   accessToken: string;
 }
 
-// Serialise concurrent refresh attempts — many stale requests firing at once
+// Serialise concurrent refresh attempts, many stale requests firing at once
 // would otherwise trigger the backend's family-revocation path.
 let refreshInflight: Promise<RefreshResult | null> | null = null;
 

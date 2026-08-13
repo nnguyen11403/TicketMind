@@ -2,10 +2,10 @@
 
 Public surface:
 
-- ``GET /health`` — unauthenticated liveness probe.
-- ``POST /kb/documents`` — upsert a knowledge-base document (auth required).
-- ``GET /kb/search`` — retrieve nearest-neighbour KB documents (auth required).
-- ``POST /triage`` — end-to-end triage of a new ticket (auth required).
+- ``GET /health``, unauthenticated liveness probe.
+- ``POST /kb/documents``. Upsert a knowledge-base document (auth required).
+- ``GET /kb/search``. Retrieve nearest-neighbour KB documents (auth required).
+- ``POST /triage``. End-to-end triage of a new ticket (auth required).
 
 All authenticated endpoints share the ``X-Internal-Key`` guard defined in
 :mod:`deps`; the backend is the only intended caller.
@@ -94,7 +94,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     try:
         yield
     finally:
-        # Only close the pool if we opened it — tests that supplied their
+        # Only close the pool if we opened it, tests that supplied their
         # own pool via app.state manage its lifetime themselves.
         if getattr(state, "_owns_pool", True):
             await state.pool.close()

@@ -120,8 +120,8 @@ class UserRoleManagementTest {
 
 		mockMvc.perform(get("/users").header(HttpHeaders.AUTHORIZATION, bearerFor(admin)))
 				.andExpect(status().isOk())
-				// Only AGENT and ADMIN — the roster is for assignment, so
-				// listing every submitter would be both useless and leaky.
+				// Only AGENT and ADMIN. The roster exists for assignment, so
+				// listing every submitter would be useless and leaky.
 				.andExpect(jsonPath("$.length()").value(2));
 
 		mockMvc.perform(get("/users").header(HttpHeaders.AUTHORIZATION, bearerFor(alice)))

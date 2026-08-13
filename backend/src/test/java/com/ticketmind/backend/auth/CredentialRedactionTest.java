@@ -8,7 +8,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Records generate a toString() that prints every component, and Spring logs
- * the deserialised request body at DEBUG — which the dev profile enables, and
+ * the deserialised request body at DEBUG, which the dev profile enables, and
  * which docker-compose runs by default. Without an override that combination
  * writes plaintext passwords into the application log on every login.
  */
@@ -20,7 +20,7 @@ class CredentialRedactionTest {
 	void loginRequestNeverPrintsThePassword() {
 		String rendered = new LoginRequest("alice@example.com", SECRET).toString();
 		assertThat(rendered).doesNotContain(SECRET);
-		// The non-secret fields stay readable — a redacted log is still a log.
+		// The non-secret fields stay readable, a redacted log is still a log.
 		assertThat(rendered).contains("alice@example.com");
 	}
 

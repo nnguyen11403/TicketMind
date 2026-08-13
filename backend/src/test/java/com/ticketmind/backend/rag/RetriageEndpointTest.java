@@ -45,7 +45,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 /**
  * The re-triage endpoint exists because provider rate limits make a failed
- * automatic triage routine — Voyage's free tier allows three requests a
+ * automatic triage routine, Voyage's free tier allows three requests a
  * minute, so a burst of tickets leaves some untriaged with nothing wrong.
  *
  * <p>The HTTP surface is driven through MockMvc, but the RAG call is stubbed
@@ -65,7 +65,7 @@ class RetriageEndpointTest {
 	/**
 	 * MockRestServiceServer binds to a RestClient.Builder, not a built client,
 	 * so the app's ragRestClient bean cannot be intercepted after the fact.
-	 * This supplies a @Primary replacement built from a bound builder — the
+	 * This supplies a @Primary replacement built from a bound builder, the
 	 * ordering matters, which is why the client bean depends on the server.
 	 */
 	@TestConfiguration(proxyBeanMethods = false)

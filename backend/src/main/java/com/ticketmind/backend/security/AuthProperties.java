@@ -10,7 +10,7 @@ import java.time.Duration;
 @Validated
 @ConfigurationProperties(prefix = "app.auth")
 public record AuthProperties(
-		// 4 is BCrypt's floor — tests dial down to keep CPU cost negligible;
+		// 4 is BCrypt's floor, tests dial down to keep CPU cost negligible;
 		// production must stay >= 12 (enforced via application.yml default).
 		@Min(4) int bcryptStrength,
 		@Min(12) int passwordMinLength,

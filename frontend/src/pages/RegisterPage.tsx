@@ -10,7 +10,7 @@ import { formatError } from '@/lib/errorMessages';
 const schema = z.object({
   displayName: z.string().min(1, 'Display name is required').max(120),
   email: z.string().email('Enter a valid email address'),
-  // Backend enforces >=12 chars, 1 letter + 1 digit — mirror it up front so
+  // Backend enforces >=12 chars, 1 letter + 1 digit, mirror it up front so
   // the failure is caught before the network round-trip.
   password: z
     .string()

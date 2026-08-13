@@ -124,7 +124,7 @@ describe('TicketDetailPage', () => {
 
   it('lets an agent re-run triage on a ticket the automatic pass missed', async () => {
     authedRefresh({ id: AGENT_ID, displayName: 'Aggie', role: 'AGENT' });
-    // Untriaged and old enough that the poller has given up — exactly the
+    // Untriaged and old enough that the poller has given up, exactly the
     // state a provider rate limit leaves a ticket in.
     const longAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
     let triaged = false;

@@ -82,7 +82,7 @@ class AuthFlowIntegrationTest {
 		assertThat(rotated).isNotNull();
 		assertThat(rotated.getValue()).isNotEqualTo(refreshCookie.getValue());
 
-		// Original refresh token now reused — must revoke entire family.
+		// Original refresh token now reused, must revoke entire family.
 		mockMvc.perform(post("/auth/refresh").cookie(refreshCookie))
 				.andExpect(status().isUnauthorized());
 

@@ -45,7 +45,7 @@ class VoyageEmbedder:
             result = await self._client.embed(texts=texts, model=self._model)
         except Exception as exc:
             # Deliberately broad: every failure mode of an outbound provider
-            # call — auth, quota, timeout, transport — is an upstream problem
+            # call. Auth, quota, timeout, transport, is an upstream problem
             # from our side. Without this a missing VOYAGE_API_KEY surfaced as
             # a 500 with a stack trace instead of a clean 502.
             raise UpstreamError(f"embedding provider failed: {exc}") from exc
@@ -59,7 +59,7 @@ class FakeEmbedder:
 
     Produces a unit-length vector so cosine distance ordering is meaningful
     without pulling in numpy. The mapping is stable per input string, so two
-    calls with the same text return identical vectors — the property real
+    calls with the same text return identical vectors, the property real
     embedders promise.
     """
 

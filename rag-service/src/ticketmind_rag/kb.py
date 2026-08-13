@@ -30,7 +30,7 @@ class KbDocumentRow:
 class KbRepository:
     """Thin data-access layer around ``kb_documents``.
 
-    Register-vector once per connection is handled inside each method — the
+    Register-vector once per connection is handled inside each method, the
     async pool may hand back a fresh connection at any point.
     """
 
@@ -41,7 +41,7 @@ class KbRepository:
     async def upsert(self, doc: KbDocumentIn) -> KbDocumentOut:
         # Wrapping in Vector is what gives the bound parameter the `vector` type
         # OID. A bare list is sent as float8[], which Postgres can only coerce
-        # when a target column supplies the type — it fails for `<=>` in search.
+        # when a target column supplies the type, it fails for `<=>` in search.
         vector = Vector(await self._embedder.embed(f"{doc.title}\n\n{doc.body}"))
         async with self._pool.connection() as conn:
             await register_vector_async(conn)

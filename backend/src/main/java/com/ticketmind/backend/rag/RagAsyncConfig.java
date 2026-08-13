@@ -22,7 +22,7 @@ public class RagAsyncConfig {
 	 * <p>The queue is bounded and overflow is dropped rather than run on the
 	 * caller: the caller here is the thread that just committed a ticket, and
 	 * blocking it would turn a RAG backlog into user-visible latency on
-	 * {@code POST /tickets}. Shedding triage is the correct trade — the ticket
+	 * {@code POST /tickets}. Shedding triage is the correct trade, the ticket
 	 * is already safely persisted.
 	 */
 	@Bean

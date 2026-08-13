@@ -38,7 +38,7 @@ public class UserService {
 		if (target.getRole() == next) {
 			return target;
 		}
-		// Losing the last ADMIN means nobody can ever grant the role again —
+		// Losing the last ADMIN means nobody can ever grant the role again -
 		// the bootstrap only fires when zero admins exist, so this would be
 		// recoverable but only by a restart with config changed. Refuse.
 		if (target.getRole() == UserRole.ADMIN && !userRepository.existsByRoleAndIdNot(UserRole.ADMIN, targetId)) {

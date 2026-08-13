@@ -2,7 +2,7 @@
 
 AI-assisted support ticket triage system. Submit a bug report or support ticket, and the system automatically categorizes it, assigns a priority, and surfaces a suggested resolution by retrieving relevant context from past tickets and documentation.
 
-Built to mirror how real support/engineering teams handle ticket triage at scale — combining a traditional CRUD backend with a retrieval-augmented generation (RAG) pipeline for intelligent automation.
+Built to mirror how real support/engineering teams handle ticket triage at scale. Combining a traditional CRUD backend with a retrieval-augmented generation (RAG) pipeline for intelligent automation.
 
 ## Features
 
@@ -20,7 +20,7 @@ Built to mirror how real support/engineering teams handle ticket triage at scale
 **Frontend:** React
 **Infrastructure:** Docker, Docker Compose, GitHub Actions (CI/CD)
 **Testing:** Spring Boot Test, Cucumber, Selenium
-**Deployment:** [Render / Fly.io / AWS — fill in once deployed]
+**Deployment:** [Render / Fly.io / AWS, fill in once deployed]
 
 ## Architecture
 
@@ -45,7 +45,7 @@ Built to mirror how real support/engineering teams handle ticket triage at scale
                       └──────────────────┘
 ```
 
-When a new ticket is submitted, the backend stores it in Postgres, then triggers the RAG service, which embeds the ticket text, retrieves the most similar past tickets/docs from pgvector, and passes that context to an LLM to generate a category, priority, and suggested resolution — which is written back to the ticket record.
+When a new ticket is submitted, the backend stores it in Postgres, then triggers the RAG service, which embeds the ticket text, retrieves the most similar past tickets/docs from pgvector, and passes that context to an LLM to generate a category, priority, and suggested resolution, which is written back to the ticket record.
 
 ## Getting Started
 
@@ -68,7 +68,7 @@ docker compose up --build
 Once the stack is up, `./scripts/smoke-test.sh` checks all three services and
 runs a ticket through end to end.
 
-Without a `VOYAGE_API_KEY` the stack still runs — tickets are created normally,
+Without a `VOYAGE_API_KEY` the stack still runs, tickets are created normally,
 they just stay untriaged.
 
 ### Run tests
@@ -90,7 +90,7 @@ In active development. Current milestones:
 
 ## Why This Project
 
-Built as a hands-on exploration of how AI-assisted automation fits into a traditional full-stack application — the kind of pattern increasingly common in production support and DevOps tooling, where LLMs augment rather than replace existing workflows.
+Built as a hands-on exploration of how AI-assisted automation fits into a traditional full-stack application. The kind of pattern increasingly common in production support and DevOps tooling, where LLMs augment rather than replace existing workflows.
 
 ## License
 

@@ -19,7 +19,7 @@ import org.springframework.transaction.event.TransactionalEventListener;
  * request thread so an LLM round-trip is not charged to the user's POST.
  *
  * <p>Both handlers swallow everything. An exception thrown from an after-commit
- * listener cannot undo the commit — it would only produce a confusing log with
+ * listener cannot undo the commit, it would only produce a confusing log with
  * a successful HTTP response already on the wire.
  */
 @Component

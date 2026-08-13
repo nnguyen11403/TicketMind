@@ -48,8 +48,8 @@ public class AdminBootstrap {
 					log.warn("promoted {} to ADMIN via app.auth.bootstrap-admin-email", user.getEmail());
 				},
 				() -> log.warn(
-						"app.auth.bootstrap-admin-email is set to {} but no such account exists yet — "
-								+ "register it, then restart to receive ADMIN",
+						"app.auth.bootstrap-admin-email is set to {} but no such account exists. "
+								+ "Register it, then restart to receive ADMIN",
 						email));
 	}
 }

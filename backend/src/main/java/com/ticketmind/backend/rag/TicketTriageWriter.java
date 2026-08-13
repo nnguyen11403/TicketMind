@@ -108,7 +108,7 @@ public class TicketTriageWriter {
 			return Optional.of(TicketPriority.valueOf(raw.trim().toUpperCase()));
 		} catch (IllegalArgumentException ex) {
 			// The RAG service constrains this to the same four values, but it
-			// is an out-of-process contract — an unknown value must not reach
+			// is an out-of-process contract, an unknown value must not reach
 			// the tickets_priority_check constraint and blow up the write.
 			return Optional.empty();
 		}

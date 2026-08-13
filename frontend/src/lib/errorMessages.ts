@@ -14,7 +14,7 @@ const codeMessages: Record<string, string> = {
   forbidden: 'You do not have permission to do that.',
   last_admin: 'You cannot remove the last remaining admin.',
   triage_failed:
-    'Triage could not be completed — the AI service is unavailable or rate limited. Try again in a minute.',
+    'Triage could not be completed. The AI service is unavailable or rate limited. Try again in a minute.',
   triage_disabled: 'AI triage is switched off for this deployment.',
   internal_error: 'Something went wrong on our end. Please try again shortly.',
   unknown_error: 'Something went wrong. Please try again.',
@@ -24,7 +24,7 @@ const codeMessages: Record<string, string> = {
 export function formatError(error: unknown): string {
   if (error instanceof ApiError) {
     if (error.code === 'rate_limit_exceeded' && error.retryAfterSeconds) {
-      return `Too many attempts — try again in ${error.retryAfterSeconds}s.`;
+      return `Too many attempts, try again in ${error.retryAfterSeconds}s.`;
     }
     return codeMessages[error.code] ?? codeMessages.unknown_error!;
   }

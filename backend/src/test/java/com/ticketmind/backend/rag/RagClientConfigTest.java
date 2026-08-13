@@ -25,11 +25,11 @@ class RagClientConfigTest {
 
 	@Test
 	void theHttpClientIsPinnedToHttp11() {
-		// Regression guard for a bug that cost a stack rebuild to find: the JDK
-		// default of HTTP_2 sends an upgrade handshake that uvicorn's h11 parser
-		// rejects, so the request body never reaches FastAPI. This assertion is
-		// cheap; the behavioural check is scripts/smoke-test.sh, because a
-		// tolerant test server accepts the upgrade header and proves nothing.
+		// The JDK default of HTTP_2 sends an upgrade handshake that uvicorn's
+		// h11 parser rejects, so the request body never reaches FastAPI. This
+		// assertion is cheap; the behavioural check lives in
+		// scripts/smoke-test.sh, because a tolerant test server accepts the
+		// upgrade header and proves nothing.
 		assertThat(buildClient().version()).isEqualTo(HttpClient.Version.HTTP_1_1);
 	}
 
@@ -40,7 +40,7 @@ class RagClientConfigTest {
 	@Test
 	void aRealRequestOverASocketCarriesTheSnakeCaseBodyAndTheInternalKey() throws Exception {
 		// Unlike RagClientTest, this goes over a real socket through the real
-		// request factory and message converters — it would catch a client that
+		// request factory and message converters, it would catch a client that
 		// silently drops the body or mangles the headers.
 		AtomicReference<String> receivedBody = new AtomicReference<>();
 		AtomicReference<String> receivedKey = new AtomicReference<>();

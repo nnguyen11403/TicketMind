@@ -120,4 +120,49 @@ describe('TicketListPage', () => {
     renderWithProviders(<TicketListPage />, { route: '/tickets' });
     expect(await screen.findByText(/haven't opened any tickets/i)).toBeInTheDocument();
   });
+
+  it('sends the chosen sort to the API', async () => {
+    authedRefresh('AGENT');
+    const seen: string[] = [];
+    server.use(
+      http.get(`${BASE}/tickets`, ({ request }) => {
+        seen.push(new URL(request.url).searchParams.get('sort') ?? 'none');
+        return HttpResponse.json(ticketPage(undefined, 0));
+      }),
+    );
+
+    renderWithProviders(
+      <Routes>
+        <Route path="/tickets" element={<TicketListPage />} />
+      </Routes>,
+      { route: '/tickets' },
+    );
+
+    await waitFor(() => expect(seen).toContain('NEWEST'));
+
+    await userEvent.selectOptions(await screen.findByLabelText(/sort/i), 'PRIORITY_HIGH_FIRST');
+
+    await waitFor(() => expect(seen).toContain('PRIORITY_HIGH_FIRST'));
+  });
+
+  it('restores the sort from the URL on load', async () => {
+    authedRefresh('AGENT');
+    const seen: string[] = [];
+    server.use(
+      http.get(`${BASE}/tickets`, ({ request }) => {
+        seen.push(new URL(request.url).searchParams.get('sort') ?? 'none');
+        return HttpResponse.json(ticketPage(undefined, 0));
+      }),
+    );
+
+    renderWithProviders(
+      <Routes>
+        <Route path="/tickets" element={<TicketListPage />} />
+      </Routes>,
+      { route: '/tickets?sort=PRIORITY_LOW_FIRST' },
+    );
+
+    await waitFor(() => expect(seen).toContain('PRIORITY_LOW_FIRST'));
+    expect(await screen.findByLabelText(/sort/i)).toHaveValue('PRIORITY_LOW_FIRST');
+  });
 });

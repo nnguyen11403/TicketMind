@@ -19,7 +19,7 @@ class RagPropertiesTest {
 	@Test
 	void enablingTheIntegrationWithoutAKeyFailsFast() {
 		// Silently sending unauthenticated requests would 401 on every call and
-		// look like "triage just doesn't work" — fail at startup instead.
+		// look like "triage just doesn't work", fail at startup instead.
 		assertThatThrownBy(() -> build(true, "  "))
 				.isInstanceOf(IllegalStateException.class)
 				.hasMessageContaining("app.rag.internal-key");

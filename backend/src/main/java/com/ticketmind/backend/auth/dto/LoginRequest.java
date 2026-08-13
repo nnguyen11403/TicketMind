@@ -9,7 +9,7 @@ public record LoginRequest(
 		@NotBlank @Size(max = 256) String password) {
 
 	// A record's generated toString() prints every component, and Spring's
-	// RequestResponseBodyMethodProcessor logs the deserialised body at DEBUG —
+	// RequestResponseBodyMethodProcessor logs the deserialised body at DEBUG -
 	// which the dev profile enables. Without this override every login writes
 	// the user's plaintext password into the application log.
 	@Override

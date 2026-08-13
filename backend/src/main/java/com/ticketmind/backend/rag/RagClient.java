@@ -26,7 +26,7 @@ public class RagClient {
 
 	// The RAG service caps title at 256 and body at 32000 characters and
 	// answers 422 above them. Ticket titles are already bounded at 200 by the
-	// column, but descriptions are TEXT — truncate rather than let a long
+	// column, but descriptions are TEXT, truncate rather than let a long
 	// ticket silently fail triage.
 	private static final int MAX_TITLE = 256;
 	private static final int MAX_BODY = 32_000;

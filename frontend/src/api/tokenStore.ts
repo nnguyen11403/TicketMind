@@ -1,5 +1,5 @@
 // Access tokens live in module memory only. They are never persisted to
-// localStorage/sessionStorage — that would give XSS a persistent credential
+// localStorage/sessionStorage, that would give XSS a persistent credential
 // harvest. The refresh token is an HttpOnly cookie scoped to /auth on the
 // backend, so it is unreachable from JS by design.
 let accessToken: string | null = null;

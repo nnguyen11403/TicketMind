@@ -131,7 +131,7 @@ async def test_triage_endpoint_returns_response(client: AsyncClient) -> None:
 
 
 def test_kb_search_hit_used_in_score_lookup() -> None:
-    # Small anchor to make sure KbSearchHit is importable at test time — the
+    # Small anchor to make sure KbSearchHit is importable at test time, the
     # triage service depends on the shape when it composes scores.
     hit = KbSearchHit(id="1", external_id="kb-1", title="t", body="b", category=None, score=0.5)
     assert hit.score == 0.5
@@ -141,7 +141,7 @@ async def test_provider_failure_is_502_not_500(client: AsyncClient) -> None:
     """A dead embedding provider must look like an upstream fault, not a crash.
 
     Before this, a missing VOYAGE_API_KEY produced a 500 with a stack trace in
-    the logs — functionally survivable (the backend keeps the ticket) but a
+    the logs. Functionally survivable (the backend keeps the ticket) but a
     terrible first-run experience for anyone who just ran `docker compose up`.
     """
 

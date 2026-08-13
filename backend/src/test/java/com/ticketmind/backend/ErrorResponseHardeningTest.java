@@ -25,7 +25,7 @@ class ErrorResponseHardeningTest {
 	@Test
 	void unknownRouteDoesNotLeakStackTrace() throws Exception {
 		// Unauthenticated access to any unmapped route hits the auth wall first
-		// (401) — the secure default. The sanitized error body still applies.
+		// (401). The secure default. The sanitized error body still applies.
 		mockMvc.perform(get("/does-not-exist").accept(MediaType.APPLICATION_JSON))
 				.andExpect(status().isUnauthorized())
 				.andExpect(jsonPath("$.trace").doesNotExist())

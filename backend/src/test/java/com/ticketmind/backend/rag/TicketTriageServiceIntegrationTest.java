@@ -42,7 +42,7 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
  * <p>The service under test is wired by hand rather than autowired so the call
  * is synchronous: the production path runs it on the RAG executor after commit,
  * which would make these assertions racy for no added coverage. What the async
- * hop itself does — that the events fire at all — is asserted in
+ * hop itself does, that the events fire at all, is asserted in
  * {@code TicketControllerIntegrationTest}.
  */
 @SpringBootTest
@@ -119,7 +119,7 @@ class TicketTriageServiceIntegrationTest {
 	void everyPriorityTheRagServiceCanReturnIsAcceptedByTheDatabase() {
 		// The RAG service's Priority literal and the tickets_priority_check
 		// constraint have to agree; this fails loudly if they drift apart.
-		// All expectations are registered up front — MockRestServiceServer
+		// All expectations are registered up front, MockRestServiceServer
 		// refuses new ones once a request has been made.
 		TicketPriority[] priorities = TicketPriority.values();
 		List<UUID> ticketIds = new ArrayList<>();
@@ -176,7 +176,7 @@ class TicketTriageServiceIntegrationTest {
 		server.verify();
 		server.reset();
 
-		// No expectation registered — verify() fails if a second call goes out.
+		// No expectation registered, verify() fails if a second call goes out.
 		service.triage(ticketId);
 		server.verify();
 	}

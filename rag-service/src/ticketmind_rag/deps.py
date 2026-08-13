@@ -4,7 +4,7 @@ The service is small enough that a proper DI container would be overkill; the
 app stashes long-lived objects (pool, embedder, chat, repo, triage service)
 on ``app.state`` at startup and dependency callables pull them off the
 :class:`Request`. This makes it trivial for tests to swap components before
-the app is entered — they just poke ``app.state`` directly.
+the app is entered, they just poke ``app.state`` directly.
 """
 
 from __future__ import annotations
@@ -55,7 +55,7 @@ def require_internal_key(
     We do **not** distinguish "missing" from "wrong" in the response body:
     both surface as ``unauthorized`` so external probing can't tell the two
     apart. That matters when the RAG service is exposed inside the compose
-    network — anyone who lands a foothold on another container shouldn't be
+    network. Anyone who lands a foothold on another container shouldn't be
     able to enumerate whether they need to guess a header at all.
     """
 

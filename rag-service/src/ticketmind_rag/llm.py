@@ -1,4 +1,4 @@
-"""LLM abstraction — a tiny wrapper over ``langchain-anthropic`` plus a fake.
+"""LLM abstraction. A tiny wrapper over ``langchain-anthropic`` plus a fake.
 
 The Protocol keeps the surface small: one async method that takes a system
 prompt and a user prompt and returns the text of the assistant reply.

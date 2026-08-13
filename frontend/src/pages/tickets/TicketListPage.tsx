@@ -1,13 +1,21 @@
 import { useMemo } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { listTickets, type TicketStatus } from '@/api/tickets';
+import { listTickets, TICKET_SORTS, type TicketSort, type TicketStatus } from '@/api/tickets';
 import { StatusBadge } from '@/components/StatusBadge';
 import { PriorityBadge } from '@/components/PriorityBadge';
 import { formatRelative } from '@/lib/formatDate';
 import { formatError } from '@/lib/errorMessages';
 import { isStaff } from '@/lib/roles';
 import { useAuth } from '@/auth/useAuth';
+
+const SORT_LABELS: Record<TicketSort, string> = {
+  NEWEST: 'Newest first',
+  OLDEST: 'Oldest first',
+  RECENTLY_UPDATED: 'Recently updated',
+  PRIORITY_HIGH_FIRST: 'Most urgent first',
+  PRIORITY_LOW_FIRST: 'Least urgent first',
+};
 
 const PAGE_SIZE = 20;
 const STATUSES: TicketStatus[] = ['OPEN', 'IN_PROGRESS', 'WAITING', 'RESOLVED', 'CLOSED'];
@@ -17,16 +25,28 @@ export function TicketListPage() {
   const [searchParams, setSearchParams] = useSearchParams();
 
   const status = (searchParams.get('status') as TicketStatus | null) ?? undefined;
+  const sortParam = searchParams.get('sort') as TicketSort | null;
+  const sort: TicketSort = sortParam && TICKET_SORTS.includes(sortParam) ? sortParam : 'NEWEST';
   const page = Math.max(0, Number(searchParams.get('page') ?? '0'));
 
   const query = useQuery({
-    queryKey: ['tickets', { status: status ?? null, page }],
-    queryFn: () => listTickets({ status, page, size: PAGE_SIZE }),
+    queryKey: ['tickets', { status: status ?? null, sort, page }],
+    queryFn: () => listTickets({ status, sort, page, size: PAGE_SIZE }),
   });
 
   const totalPages = query.data?.totalPages ?? 0;
   const hasPrev = page > 0;
   const hasNext = page + 1 < totalPages;
+
+  const setSort = (next: TicketSort) => {
+    const params = new URLSearchParams(searchParams);
+    // NEWEST is the default, so keep it out of the URL rather than pinning a
+    // value that means "no preference".
+    if (next === 'NEWEST') params.delete('sort');
+    else params.set('sort', next);
+    params.delete('page');
+    setSearchParams(params);
+  };
 
   const setStatus = (next: TicketStatus | undefined) => {
     const params = new URLSearchParams(searchParams);
@@ -68,32 +88,49 @@ export function TicketListPage() {
         </Link>
       </div>
 
-      <div className="flex flex-wrap gap-2 mb-4" role="group" aria-label="Filter by status">
-        <button
-          type="button"
-          onClick={() => setStatus(undefined)}
-          className={`text-sm rounded-full px-3 py-1 border ${
-            !status
-              ? 'bg-slate-900 text-white border-slate-900'
-              : 'border-slate-300 text-slate-600 hover:bg-slate-100'
-          }`}
-        >
-          All
-        </button>
-        {STATUSES.map((s) => (
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+        <div className="flex flex-wrap gap-2" role="group" aria-label="Filter by status">
           <button
-            key={s}
             type="button"
-            onClick={() => setStatus(s)}
+            onClick={() => setStatus(undefined)}
             className={`text-sm rounded-full px-3 py-1 border ${
-              status === s
+              !status
                 ? 'bg-slate-900 text-white border-slate-900'
                 : 'border-slate-300 text-slate-600 hover:bg-slate-100'
             }`}
           >
-            {s.replace('_', ' ').toLowerCase()}
+            All
           </button>
-        ))}
+          {STATUSES.map((s) => (
+            <button
+              key={s}
+              type="button"
+              onClick={() => setStatus(s)}
+              className={`text-sm rounded-full px-3 py-1 border ${
+                status === s
+                  ? 'bg-slate-900 text-white border-slate-900'
+                  : 'border-slate-300 text-slate-600 hover:bg-slate-100'
+              }`}
+            >
+              {s.replace('_', ' ').toLowerCase()}
+            </button>
+          ))}
+        </div>
+
+        <label className="flex items-center gap-2 text-sm text-slate-600">
+          Sort
+          <select
+            value={sort}
+            onChange={(event) => setSort(event.target.value as TicketSort)}
+            className="rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-slate-800"
+          >
+            {Object.entries(SORT_LABELS).map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
+        </label>
       </div>
 
       {query.isPending ? (
@@ -137,7 +174,7 @@ export function TicketListPage() {
                     <PriorityBadge priority={ticket.priority} />
                   </td>
                   <td className="px-4 py-3 text-slate-600">
-                    {ticket.submitter?.displayName ?? '—'}
+                    {ticket.submitter?.displayName ?? '-'}
                   </td>
                   <td className="px-4 py-3 text-slate-600">
                     {ticket.assignee?.displayName ?? (

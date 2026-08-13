@@ -67,8 +67,18 @@ export const historyEntrySchema = z.object({
 });
 export type HistoryEntry = z.infer<typeof historyEntrySchema>;
 
+export const TICKET_SORTS = [
+  'NEWEST',
+  'OLDEST',
+  'RECENTLY_UPDATED',
+  'PRIORITY_HIGH_FIRST',
+  'PRIORITY_LOW_FIRST',
+] as const;
+export type TicketSort = (typeof TICKET_SORTS)[number];
+
 export interface ListParams {
   status?: TicketStatus | undefined;
+  sort?: TicketSort | undefined;
   page?: number;
   size?: number;
 }
@@ -76,6 +86,7 @@ export interface ListParams {
 export async function listTickets(params: ListParams = {}): Promise<PagedTickets> {
   const search = new URLSearchParams();
   if (params.status) search.set('status', params.status);
+  if (params.sort) search.set('sort', params.sort);
   if (params.page !== undefined) search.set('page', String(params.page));
   if (params.size !== undefined) search.set('size', String(params.size));
   const query = search.toString();

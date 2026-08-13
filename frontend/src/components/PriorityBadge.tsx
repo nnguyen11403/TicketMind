@@ -15,6 +15,6 @@ const labels: Record<TicketPriority, string> = {
 };
 
 export function PriorityBadge({ priority }: { priority: TicketPriority | null | undefined }) {
-  if (!priority) return <span className="text-slate-400 text-xs">—</span>;
+  if (!priority) return <span className="text-slate-400 text-xs">-</span>;
   return <span className={`text-xs font-medium ${styles[priority]}`}>{labels[priority]}</span>;
 }

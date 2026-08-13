@@ -104,7 +104,7 @@ public class User {
 
 	/**
 	 * Change this user's role. Named rather than a bare setter so every role
-	 * change is greppable — this is the only path to staff privileges.
+	 * change is greppable, this is the only path to staff privileges.
 	 */
 	public void changeRole(UserRole next) {
 		this.role = next;

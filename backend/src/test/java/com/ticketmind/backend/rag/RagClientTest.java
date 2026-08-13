@@ -77,7 +77,7 @@ class RagClientTest {
 	void triageReturnsEmptyWhenTheRagServiceReportsAnUpstreamFailure() {
 		RagClient client = clientWith(true);
 		// 502 upstream_error is what the RAG service returns when Claude's reply
-		// could not be parsed — a real, expected condition, not a bug.
+		// could not be parsed, a real, expected condition, not a bug.
 		server.expect(requestTo(BASE_URL + "/triage"))
 				.andRespond(withStatus(HttpStatus.BAD_GATEWAY)
 						.contentType(MediaType.APPLICATION_JSON)

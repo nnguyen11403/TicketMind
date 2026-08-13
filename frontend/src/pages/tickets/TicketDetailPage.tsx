@@ -298,7 +298,7 @@ function SubmitterClose({ ticket, onClosed }: { ticket: TicketDetail; onClosed: 
 function TicketMeta({ ticket }: { ticket: TicketDetail }) {
   const rows = useMemo(
     () => [
-      { label: 'Submitter', value: ticket.submitter?.displayName ?? '—' },
+      { label: 'Submitter', value: ticket.submitter?.displayName ?? '-' },
       { label: 'Assignee', value: ticket.assignee?.displayName ?? 'Unassigned' },
       { label: 'Created', value: formatAbsolute(ticket.createdAt) },
       { label: 'Updated', value: formatAbsolute(ticket.updatedAt) },

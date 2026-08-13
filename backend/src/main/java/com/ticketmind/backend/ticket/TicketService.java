@@ -17,7 +17,6 @@ import com.ticketmind.backend.user.UserRole;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -61,7 +60,7 @@ public class TicketService {
 		ticketRepository.save(ticket);
 		recordHistory(ticket, submitter, TicketHistoryEventType.CREATED, Map.of(
 				"title", ticket.getTitle()));
-		// Delivered after commit, on the RAG executor — see RagTicketListener.
+		// Delivered after commit, on the RAG executor, see RagTicketListener.
 		// The 201 response therefore carries a null category/priority and the
 		// client sees them appear on a later fetch.
 		events.publishEvent(new TicketCreatedEvent(ticket.getId()));
@@ -79,12 +78,13 @@ public class TicketService {
 	}
 
 	@Transactional(readOnly = true)
-	public Page<Ticket> list(JwtPrincipal actor, TicketStatus status, int page, int size) {
+	public Page<Ticket> list(
+			JwtPrincipal actor, TicketStatus status, TicketSort sort, int page, int size) {
 		int safePage = Math.max(0, page);
 		int safeSize = Math.min(MAX_PAGE_SIZE, Math.max(1, size));
-		PageRequest pageRequest = PageRequest.of(safePage, safeSize,
-				Sort.by(Sort.Direction.DESC, "createdAt"));
-		// USER role only ever sees its own tickets — pin the submitter
+		TicketSort safeSort = sort == null ? TicketSort.NEWEST : sort;
+		PageRequest pageRequest = PageRequest.of(safePage, safeSize, safeSort.sort());
+		// USER role only ever sees its own tickets, pin the submitter
 		// filter regardless of what the caller asked for.
 		UUID submitterFilter = isStaff(actor) ? null : actor.id();
 		return ticketRepository.search(status, submitterFilter, pageRequest);
@@ -180,7 +180,7 @@ public class TicketService {
 		try {
 			json = objectMapper.writeValueAsString(payload);
 		} catch (JacksonException e) {
-			// Payloads are constructed from internal data only — any failure
+			// Payloads are constructed from internal data only, any failure
 			// here is a programming error, never user-driven.
 			throw new IllegalStateException("failed to serialise history payload", e);
 		}
@@ -203,7 +203,7 @@ public class TicketService {
 			return;
 		}
 		// Submitters can only edit the body of the ticket while it is still
-		// OPEN — afterwards an agent is working it and rewrites would
+		// OPEN. Afterwards an agent is working it and rewrites would
 		// invalidate context.
 		if (ticket.getStatus() != TicketStatus.OPEN) {
 			throw new InvalidTicketStateException(

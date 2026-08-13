@@ -14,9 +14,9 @@ public class RagClientConfig {
 	 * Pinned to HTTP/1.1 on purpose.
 	 *
 	 * <p>{@code HttpClient.newBuilder()} defaults to {@code HTTP_2}, which makes
-	 * the JDK send an HTTP/1.1 upgrade handshake on the first request. uvicorn's
-	 * h11 parser — what the RAG service runs on — rejects that with
-	 * "Invalid HTTP request received" and the body never reaches FastAPI, which
+	 * the JDK send an HTTP/1.1 upgrade handshake on the first request. The RAG
+	 * service runs on uvicorn, whose h11 parser rejects that with
+	 * "Invalid HTTP request received", so the body never reaches FastAPI, which
 	 * then answers 422 for a missing request body. Nothing below the socket sees
 	 * it: {@code MockRestServiceServer} intercepts at the request-factory level,
 	 * so the client tests pass either way. {@code scripts/smoke-test.sh} against
@@ -36,9 +36,9 @@ public class RagClientConfig {
 	public RestClient ragRestClient(RagProperties properties) {
 		JdkClientHttpRequestFactory requestFactory =
 				new JdkClientHttpRequestFactory(buildHttpClient(properties));
-		// Read timeout has to cover a Claude round-trip, so it is far longer
-		// than the connect timeout — a slow model is normal, an unreachable
-		// host is not.
+		// Read timeout has to cover a full model round-trip, so it is far longer
+		// than the connect timeout. A slow model is normal; an unreachable host
+		// is not.
 		requestFactory.setReadTimeout(properties.readTimeout());
 
 		RestClient.Builder builder = RestClient.builder()

@@ -44,7 +44,7 @@ class Settings(BaseSettings):
 def get_settings() -> Settings:
     """Return a process-wide singleton :class:`Settings`.
 
-    ``lru_cache`` gives us the singleton for free and — importantly — lets
+    ``lru_cache`` gives us the singleton for free and, importantly, lets
     tests call ``get_settings.cache_clear()`` between cases where they want to
     override the environment.
     """

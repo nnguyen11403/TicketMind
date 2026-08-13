@@ -11,6 +11,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import org.hibernate.annotations.Formula;
 import org.hibernate.annotations.UuidGenerator;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.LastModifiedDate;
@@ -59,6 +60,14 @@ public class Ticket {
 	@Column(name = "triaged_at")
 	private Instant triagedAt;
 
+	// Read-only ordering key. The priority column stores enum names, so sorting
+	// on it directly is alphabetical (CRITICAL, HIGH, LOW, MEDIUM) rather than
+	// by urgency. A derived column keeps this out of the schema and out of the
+	// write path; untriaged tickets rank 0.
+	@Formula("CASE priority WHEN 'CRITICAL' THEN 4 WHEN 'HIGH' THEN 3 "
+			+ "WHEN 'MEDIUM' THEN 2 WHEN 'LOW' THEN 1 ELSE 0 END")
+	private int priorityRank;
+
 	@Column(name = "resolved_at")
 	private Instant resolvedAt;
 
@@ -105,7 +114,7 @@ public class Ticket {
 		if (next == TicketStatus.RESOLVED) {
 			this.resolvedAt = now;
 		} else if (this.resolvedAt != null && !next.isTerminal()) {
-			// Reopened after resolution — wipe resolution timestamp so it
+			// Reopened after resolution, wipe resolution timestamp so it
 			// reflects only the most recent resolution event.
 			this.resolvedAt = null;
 		}
@@ -128,6 +137,7 @@ public class Ticket {
 	public TicketPriority getPriority() { return priority; }
 	public String getSuggestedResolution() { return suggestedResolution; }
 	public Instant getTriagedAt() { return triagedAt; }
+	public int getPriorityRank() { return priorityRank; }
 	public Instant getResolvedAt() { return resolvedAt; }
 	public Instant getCreatedAt() { return createdAt; }
 	public Instant getUpdatedAt() { return updatedAt; }

@@ -5,6 +5,10 @@
 *.pem
 *.key
 
+# Local tooling config
+CLAUDE.md
+.claude/
+
 # IDE / editor
 .idea/
 .vscode/

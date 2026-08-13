@@ -56,7 +56,7 @@ public class RefreshTokenService {
 				.orElseThrow(InvalidRefreshTokenException::new);
 		Instant now = clock.instant();
 		if (stored.getRevokedAt() != null) {
-			log.warn("Refresh token reuse detected for user {} — revoking all sessions",
+			log.warn("Refresh token reuse detected for user {}, revoking all sessions",
 					stored.getUser().getId());
 			repository.revokeAllForUser(stored.getUser().getId(), now);
 			throw new InvalidRefreshTokenException();

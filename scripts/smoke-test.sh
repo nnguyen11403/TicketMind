@@ -5,8 +5,8 @@
 # What no other suite covers is whether the three services agree with each
 # other once they are real processes on a real network: the backend's
 # MockRestServiceServer and the RAG service's FakeChat are each other's blind
-# spot. This is the only check that would have caught the URGENT/CRITICAL
-# priority mismatch found in step 9.
+# spot. A priority value the two sides disagree on, or a renamed field, only
+# shows up here.
 #
 #   docker compose up -d --build
 #   ./scripts/smoke-test.sh
@@ -33,7 +33,7 @@ note() { printf '  \033[33mNOTE\033[0m  %s\n' "$1"; }
 
 # Extracts the FIRST occurrence of a string field. Deliberately not sed with a
 # leading `.*`: that is greedy, so on a TicketResponse it returns submitter.id
-# instead of the ticket id — which then 404s and looks like a backend bug.
+# instead of the ticket id, which then 404s and looks like a backend bug.
 json_first() {
 	printf '%s' "$1" | grep -o "\"$2\":\"[^\"]*\"" | head -1 | cut -d'"' -f4
 }
@@ -85,13 +85,13 @@ asset=$(curl -fsS "$FRONTEND_URL/" 2>/dev/null | grep -o '/assets/[^"]*\.js' | h
 if [ -n "$asset" ]; then
 	bundle=$(curl -fsS "$FRONTEND_URL$asset" 2>/dev/null)
 	if printf '%s' "$bundle" | grep -qE 'https?://(backend|rag-service|postgres)[:/]'; then
-		bad "the bundle points at an internal compose hostname — the browser cannot resolve it"
+		bad "the bundle points at an internal compose hostname, the browser cannot resolve it"
 	else
 		ok "no internal compose hostname baked into the bundle"
 	fi
 	printf '%s' "$bundle" | grep -qF "$BACKEND_URL" \
 		&& ok "bundle is built against $BACKEND_URL" \
-		|| note "bundle does not reference $BACKEND_URL — check the VITE_API_BASE_URL build arg"
+		|| note "bundle does not reference $BACKEND_URL, check the VITE_API_BASE_URL build arg"
 else
 	bad "could not find a hashed JS bundle in index.html"
 fi
@@ -127,9 +127,9 @@ if [ -n "$token" ]; then
 elif [ "$reg_code" = "429" ]; then
 	# Per-IP register limit is 3/hour by design. On a fresh stack (CI) this
 	# never fires; locally it does after a few runs. It is a precondition we
-	# cannot satisfy, not a product failure — so skip rather than fail, but
+	# cannot satisfy, not a product failure, so skip rather than fail, but
 	# say so loudly enough that nobody reads it as a pass.
-	note "registration rate-limited (HTTP 429) — the per-IP cap is 3/hour"
+	note "registration rate-limited (HTTP 429), the per-IP cap is 3/hour"
 	note "SKIPPING the ticket flow. \`docker compose restart backend\` resets the"
 	note "in-memory buckets, or wait for the window to refill."
 else
@@ -140,16 +140,16 @@ if [ -n "$token" ]; then
 	# The SPA parses this response with a strict Zod schema, so a field the
 	# backend renames (or never sent) breaks login and registration in the
 	# browser while every backend test and every MSW-mocked frontend test still
-	# passes — exactly how `accessTokenExpiresIn` shipped. These field names
-	# must stay in step with authResponseSchema in frontend/src/api/auth.ts.
+	# passes. These field names must stay in step with authResponseSchema in
+	# frontend/src/api/auth.ts.
 	for field in accessToken tokenType expiresAt; do
 		printf '%s' "$reg" | grep -q "\"$field\":" \
 			&& ok "auth response carries \"$field\" (the SPA's schema requires it)" \
-			|| bad "auth response is MISSING \"$field\" — the SPA cannot parse it and login will fail"
+			|| bad "auth response is MISSING \"$field\", the SPA cannot parse it and login will fail"
 	done
 	printf '%s' "$reg" | grep -qE '"user":\{[^}]*"role":' \
 		&& ok "auth response carries user.role" \
-		|| bad "auth response is missing user.role — the SPA cannot parse it"
+		|| bad "auth response is missing user.role, the SPA cannot parse it"
 
 	created=$(curl -fsS -X POST "$BACKEND_URL/tickets" \
 		-H "Authorization: Bearer $token" -H 'Content-Type: application/json' \
@@ -157,12 +157,12 @@ if [ -n "$token" ]; then
 	ticket_id=$(json_first "$created" id)
 	[ -n "$ticket_id" ] && ok "created ticket $ticket_id" || bad "ticket creation failed: $created"
 
-	# The contract chosen in step 9: triage is asynchronous, so the 201 is
-	# deliberately untriaged. A non-null category here would mean someone made
-	# it synchronous and put an LLM call on the submit path.
+	# Triage is asynchronous, so the 201 carries no verdict yet. A non-null
+	# category here would mean someone moved the model call onto the submit
+	# path.
 	case "$created" in
 		*'"category":null'*) ok "201 response is untriaged, as designed" ;;
-		*) note "201 carried a non-null category — triage may have gone synchronous" ;;
+		*) note "201 carried a non-null category, triage may have gone synchronous" ;;
 	esac
 
 	if [ -n "$ticket_id" ]; then
@@ -184,22 +184,22 @@ if [ -n "$token" ]; then
 				LOW|MEDIUM|HIGH|CRITICAL)
 					ok "priority '$priority' is in the backend enum" ;;
 				*)
-					bad "priority '$priority' is NOT one of LOW/MEDIUM/HIGH/CRITICAL — the services have drifted" ;;
+					bad "priority '$priority' is NOT one of LOW/MEDIUM/HIGH/CRITICAL, the services have drifted" ;;
 			esac
 			printf '%s' "$triaged" | grep -q '"suggestedResolution":"' \
 				&& ok "a suggested resolution was persisted" \
 				|| note "no suggested resolution on the ticket"
 		else
-			note "triage did not land within 60s — expected without real ANTHROPIC_API_KEY/VOYAGE_API_KEY"
+			note "triage did not land within 60s. Expected without real ANTHROPIC_API_KEY/VOYAGE_API_KEY"
 			note "the ticket was still created, which is the graceful-degradation path"
 		fi
 
 		# Re-triage is staff-only. Asserted with a submitter token because that
-		# costs no model call — the happy path would spend an embedding and a
+		# costs no model call, the happy path would spend an embedding and a
 		# Claude request on every smoke run, and CI has no provider keys anyway.
 		code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BACKEND_URL/tickets/$ticket_id/triage" \
 			-H "Authorization: Bearer $token")
-		[ "$code" = "404" ] && ok "re-triage refuses a submitter (404, not 403 — ids stay unguessable)" \
+		[ "$code" = "404" ] && ok "re-triage refuses a submitter (404, not 403, ids stay unguessable)" \
 			|| bad "re-triage returned $code for a submitter (expected 404)"
 
 		# Whether or not triage succeeded, a RAG failure must never break the
@@ -222,12 +222,12 @@ preflight=$(curl -s -i -X OPTIONS "$BACKEND_URL/tickets" \
 	-H 'Access-Control-Request-Headers: authorization,content-type' 2>/dev/null)
 printf '%s' "$preflight" | grep -qi "^access-control-allow-origin: $FRONTEND_URL" \
 	&& ok "preflight from $FRONTEND_URL is allowed" \
-	|| bad "preflight from $FRONTEND_URL was NOT allowed — check CORS_ALLOWED_ORIGINS against FRONTEND_PORT"
+	|| bad "preflight from $FRONTEND_URL was NOT allowed. Check CORS_ALLOWED_ORIGINS against FRONTEND_PORT"
 # The refresh cookie is HttpOnly and cross-origin, so credentials must be allowed
 # or silent re-auth breaks on every page load.
 printf '%s' "$preflight" | grep -qi '^access-control-allow-credentials: true' \
 	&& ok "credentials allowed (the tm_refresh cookie needs this)" \
-	|| bad "Access-Control-Allow-Credentials missing — silent refresh will fail in the browser"
+	|| bad "Access-Control-Allow-Credentials missing, silent refresh will fail in the browser"
 
 evil=$(curl -s -i -X OPTIONS "$BACKEND_URL/tickets" \
 	-H 'Origin: https://evil.example' -H 'Access-Control-Request-Method: POST' 2>/dev/null)

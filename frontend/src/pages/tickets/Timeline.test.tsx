@@ -40,7 +40,7 @@ describe('Timeline', () => {
     render(
       <Timeline
         entries={[
-          // The backend writes this row with a null actor — nobody performed it.
+          // The backend writes this row with a null actor, nobody performed it.
           entry('TRIAGED', { category: 'billing', priority: 'HIGH', summary: 's' }, null),
         ]}
       />,
