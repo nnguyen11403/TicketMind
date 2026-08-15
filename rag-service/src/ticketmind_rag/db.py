@@ -17,13 +17,17 @@ from __future__ import annotations
 
 from psycopg_pool import AsyncConnectionPool
 
-_KB_DOCUMENTS_DDL = """
-CREATE EXTENSION IF NOT EXISTS vector;
+_VECTOR_EXTENSION_DDL = "CREATE EXTENSION IF NOT EXISTS vector"
 
+_KB_DOCUMENTS_DDL = """
 CREATE TABLE IF NOT EXISTS kb_documents (
     id           UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
     external_id  VARCHAR(128) NOT NULL UNIQUE,
-    title        VARCHAR(256) NOT NULL,
+    -- TEXT rather than VARCHAR(256): these hold the AES-GCM envelope, which is
+    -- longer than the title it wraps. The 256-character limit users are held
+    -- to still exists, in KbDocumentIn, where exceeding it is a 422 instead of
+    -- a constraint violation.
+    title        TEXT         NOT NULL,
     body         TEXT         NOT NULL,
     category     VARCHAR(64),
     embedding    vector({dim}) NOT NULL,
@@ -34,6 +38,10 @@ CREATE TABLE IF NOT EXISTS kb_documents (
 CREATE INDEX IF NOT EXISTS idx_kb_documents_vector_cosine
     ON kb_documents
     USING hnsw (embedding vector_cosine_ops);
+
+-- No-op on a table this startup just created; widens the column on one
+-- provisioned before titles were encrypted.
+ALTER TABLE kb_documents ALTER COLUMN title TYPE TEXT;
 """
 
 
@@ -59,4 +67,14 @@ async def ensure_schema(pool: AsyncConnectionPool, embedding_dim: int) -> None:
 
     ddl = _KB_DOCUMENTS_DDL.format(dim=int(embedding_dim))
     async with pool.connection() as conn, conn.cursor() as cur:
+        # Checked rather than issued unconditionally. This service now connects
+        # as `ticketmind_rag`, which is not a superuser and therefore cannot
+        # CREATE EXTENSION at all — and does not need to, because the backend's
+        # Flyway V2 already installed it and compose orders the backend first.
+        # `CREATE EXTENSION IF NOT EXISTS` would still be the wrong shape here:
+        # it would make this service's startup depend on a privilege it should
+        # not hold, on the one path where the extension is genuinely absent.
+        await cur.execute("SELECT 1 FROM pg_extension WHERE extname = 'vector'")
+        if await cur.fetchone() is None:
+            await cur.execute(_VECTOR_EXTENSION_DDL)
         await cur.execute(ddl)

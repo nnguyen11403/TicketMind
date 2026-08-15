@@ -1,7 +1,9 @@
 package com.ticketmind.backend.ticket;
 
+import com.ticketmind.backend.common.crypto.EncryptedStringConverter;
 import com.ticketmind.backend.user.User;
 import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EntityListeners;
 import jakarta.persistence.EnumType;
@@ -37,9 +39,14 @@ public class Ticket {
 	@JoinColumn(name = "assignee_id")
 	private User assignee;
 
-	@Column(nullable = false, length = 200)
+	// Encrypted at rest, so the column is TEXT rather than VARCHAR(200): the
+	// ciphertext envelope is longer than the plaintext it wraps. The 200-char
+	// limit users actually see is enforced by CreateTicketRequest.
+	@Convert(converter = EncryptedStringConverter.class)
+	@Column(nullable = false, columnDefinition = "text")
 	private String title;
 
+	@Convert(converter = EncryptedStringConverter.class)
 	@Column(nullable = false, columnDefinition = "text")
 	private String description;
 
@@ -54,6 +61,9 @@ public class Ticket {
 	@Column(length = 16)
 	private TicketPriority priority;
 
+	// Claude's suggested fix quotes the ticket back at itself and cites past
+	// resolutions, so it carries the same content sensitivity as the body.
+	@Convert(converter = EncryptedStringConverter.class)
 	@Column(name = "suggested_resolution", columnDefinition = "text")
 	private String suggestedResolution;
 

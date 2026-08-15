@@ -5,6 +5,10 @@ spring:
         format_sql: true
 
 app:
+  security:
+    # Local runs are plain http://localhost; refusing them would make every
+    # endpoint unreachable.
+    require-https: false
   cookie:
     # Local dev runs over http://, so Secure cookies would be dropped.
     secure: false

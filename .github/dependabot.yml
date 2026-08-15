@@ -1,0 +1,48 @@
+# Dependabot is the other half of the `dependencies` CI job: the job tells you
+# a lockfile has a known vulnerability, this opens the PR that fixes it.
+#
+# Weekly rather than daily, and grouped, because three ecosystems plus Docker
+# plus Actions on a daily cadence produces more PRs than this project has
+# reviewers. Security updates ignore both the schedule and the grouping and
+# arrive as soon as an advisory lands.
+version: 2
+
+updates:
+  - package-ecosystem: maven
+    directory: /backend
+    schedule:
+      interval: weekly
+    groups:
+      backend-dependencies:
+        patterns: ["*"]
+
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+    groups:
+      frontend-dependencies:
+        patterns: ["*"]
+
+  - package-ecosystem: uv
+    directory: /rag-service
+    schedule:
+      interval: weekly
+    groups:
+      rag-dependencies:
+        patterns: ["*"]
+
+  # Base images carry more CVEs over time than the application dependencies do,
+  # and nothing else in the pipeline notices a stale one.
+  - package-ecosystem: docker
+    directories:
+      - /backend
+      - /frontend
+      - /rag-service
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

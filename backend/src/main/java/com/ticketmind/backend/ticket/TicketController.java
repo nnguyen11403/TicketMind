@@ -86,7 +86,7 @@ public class TicketController {
 	public TicketResponse assign(
 			@AuthenticationPrincipal JwtPrincipal principal,
 			@PathVariable UUID id,
-			@RequestBody AssignTicketRequest request) {
+			@Valid @RequestBody AssignTicketRequest request) {
 		return TicketResponse.from(ticketService.assign(principal, id, request));
 	}
 

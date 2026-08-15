@@ -26,17 +26,31 @@ class SchemaMigrationTest {
 
 	@Test
 	void allExpectedTablesExist() {
-		List<String> tables = jdbc.queryForList(
-				"SELECT table_name FROM information_schema.tables " +
-						"WHERE table_schema = 'public' ORDER BY table_name",
-				String.class);
-		assertThat(tables).contains(
-				"flyway_schema_history",
+		assertThat(visibleTables()).contains(
 				"refresh_tokens",
 				"ticket_embeddings",
 				"ticket_history",
 				"tickets",
 				"users");
+	}
+
+	/**
+	 * information_schema only lists what the current role holds a privilege on,
+	 * and V3 grants the application role nothing on Flyway's bookkeeping. This
+	 * is the cheapest available proof that the connection really did switch out
+	 * of the owning role: if the switch silently stopped happening, this table
+	 * would reappear.
+	 */
+	@Test
+	void applicationRoleCannotSeeFlywayBookkeeping() {
+		assertThat(visibleTables()).doesNotContain("flyway_schema_history");
+	}
+
+	private List<String> visibleTables() {
+		return jdbc.queryForList(
+				"SELECT table_name FROM information_schema.tables " +
+						"WHERE table_schema = 'public' ORDER BY table_name",
+				String.class);
 	}
 
 	@Test

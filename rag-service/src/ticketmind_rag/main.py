@@ -22,6 +22,7 @@ from fastapi.responses import JSONResponse
 
 from . import __version__
 from .config import Settings, get_settings
+from .crypto import FieldCipher
 from .db import build_pool, ensure_schema
 from .deps import (
     get_kb,
@@ -84,7 +85,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     if not hasattr(state, "chat"):
         state.chat = _build_chat(settings)
 
-    state.kb = KbRepository(pool=state.pool, embedder=state.embedder)
+    if not hasattr(state, "cipher"):
+        state.cipher = FieldCipher.from_base64(settings.encryption_key.get_secret_value())
+
+    state.kb = KbRepository(pool=state.pool, embedder=state.embedder, cipher=state.cipher)
     state.triage = TriageService(
         repo=state.kb,
         chat=state.chat,

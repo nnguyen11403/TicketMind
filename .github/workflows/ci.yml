@@ -81,6 +81,51 @@ jobs:
         working-directory: rag-service
         run: uv run pytest
 
+  dependencies:
+    name: dependency scan (trivy + npm audit + pip-audit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Trivy covers all three ecosystems from the lockfiles in one pass and
+      # needs no NVD API key, which is what rules out the OWASP
+      # dependency-check plugin here — it is the only practical way to get the
+      # Maven tree scanned on every run rather than nightly.
+      - name: Scan lockfiles
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          # A vulnerability with no released fix cannot be actioned by this
+          # pipeline; failing on it would only train people to ignore the job.
+          ignore-unfixed: true
+          exit-code: "1"
+          format: table
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: npm audit
+        working-directory: frontend
+        # Production dependencies only: a dev-only advisory cannot reach a
+        # user, and the toolchain churns fast enough that gating on it would
+        # redden the build for reasons unrelated to the shipped bundle.
+        run: npm audit --omit=dev --audit-level=high
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: rag-service/uv.lock
+      - name: pip-audit
+        working-directory: rag-service
+        run: |
+          uv export --no-dev --no-emit-project --format requirements-txt > requirements.ci.txt
+          uvx pip-audit --strict --disable-pip -r requirements.ci.txt
+
   stack:
     name: full stack (docker compose + smoke test)
     runs-on: ubuntu-latest
@@ -103,9 +148,15 @@ jobs:
             echo "POSTGRES_PASSWORD=$(openssl rand -hex 24)"
             echo "POSTGRES_DB=ticketmind"
             echo "POSTGRES_PORT=5432"
+            # Hex, not base64: these land in a SQL literal in V3 and in the RAG
+            # service's DATABASE_URL, where a '/' or '+' would corrupt one.
+            echo "APP_DB_PASSWORD=$(openssl rand -hex 32)"
+            echo "RAG_DB_PASSWORD=$(openssl rand -hex 32)"
             echo "BACKEND_PORT=8080"
             echo "SPRING_PROFILES_ACTIVE=dev"
             echo "JWT_SECRET=$(openssl rand -base64 64 | tr -d '\n')"
+            # Exactly 32 bytes; the field cipher rejects anything else.
+            echo "APP_ENCRYPTION_KEY=$(openssl rand -base64 32 | tr -d '\n')"
             echo "CORS_ALLOWED_ORIGINS=http://localhost:3000"
             echo "FRONTEND_PORT=3000"
             echo "VITE_API_BASE_URL=http://localhost:8080"
@@ -125,8 +176,10 @@ jobs:
 
       - name: Smoke test
         run: |
-          RAG_KEY=$(grep '^RAG_INTERNAL_API_KEY=' .env | cut -d= -f2)
-          RAG_KEY="$RAG_KEY" ./scripts/smoke-test.sh
+          # The database-level assertions need the owner and RAG credentials,
+          # so the whole file is exported rather than picking out one value.
+          set -a; . ./.env; set +a
+          RAG_KEY="$RAG_INTERNAL_API_KEY" ./scripts/smoke-test.sh
 
       - name: Service logs
         # The smoke test reports which assertion failed; these say why.

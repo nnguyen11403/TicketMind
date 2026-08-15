@@ -9,6 +9,7 @@ def test_settings_load_from_environment(monkeypatch: pytest.MonkeyPatch) -> None
     monkeypatch.setenv("RAG_INTERNAL_API_KEY", "k")
     monkeypatch.setenv("ANTHROPIC_API_KEY", "a")
     monkeypatch.setenv("VOYAGE_API_KEY", "v")
+    monkeypatch.setenv("APP_ENCRYPTION_KEY", "a2V5")
     monkeypatch.setenv("RAG_RETRIEVAL_K", "7")
 
     get_settings.cache_clear()
@@ -35,6 +36,7 @@ def test_settings_reject_out_of_range_retrieval_k(
     monkeypatch.setenv("RAG_INTERNAL_API_KEY", "k")
     monkeypatch.setenv("ANTHROPIC_API_KEY", "a")
     monkeypatch.setenv("VOYAGE_API_KEY", "v")
+    monkeypatch.setenv("APP_ENCRYPTION_KEY", "a2V5")
     monkeypatch.setenv("RAG_RETRIEVAL_K", "0")
 
     with pytest.raises(ValidationError):
@@ -46,9 +48,11 @@ def test_secrets_do_not_leak_in_repr(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("RAG_INTERNAL_API_KEY", "super-secret-key")
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-super-secret")
     monkeypatch.setenv("VOYAGE_API_KEY", "pk-voyage-super-secret")
+    monkeypatch.setenv("APP_ENCRYPTION_KEY", "enc-super-secret")
 
     s = Settings()  # type: ignore[call-arg]
     rendered = repr(s)
     assert "super-secret-key" not in rendered
     assert "sk-ant-super-secret" not in rendered
     assert "pk-voyage-super-secret" not in rendered
+    assert "enc-super-secret" not in rendered

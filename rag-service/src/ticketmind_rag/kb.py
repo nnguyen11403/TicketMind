@@ -13,6 +13,7 @@ from pgvector import Vector
 from pgvector.psycopg import register_vector_async
 from psycopg_pool import AsyncConnectionPool
 
+from .crypto import FieldCipher
 from .embeddings import Embedder
 from .schemas import KbDocumentIn, KbDocumentOut, KbSearchHit
 
@@ -32,13 +33,20 @@ class KbRepository:
 
     Register-vector once per connection is handled inside each method, the
     async pool may hand back a fresh connection at any point.
+
+    Title and body are encrypted on the way in and decrypted on the way out.
+    `external_id` and `category` stay in the clear: the first is a ticket UUID
+    the backend already knows, and the second is a machine-assigned label that
+    a future query may well want to filter on.
     """
 
-    def __init__(self, pool: AsyncConnectionPool, embedder: Embedder) -> None:
+    def __init__(self, pool: AsyncConnectionPool, embedder: Embedder, cipher: FieldCipher) -> None:
         self._pool = pool
         self._embedder = embedder
+        self._cipher = cipher
 
     async def upsert(self, doc: KbDocumentIn) -> KbDocumentOut:
+        # Embedded before encryption: ciphertext has no semantics to embed.
         # Wrapping in Vector is what gives the bound parameter the `vector` type
         # OID. A bare list is sent as float8[], which Postgres can only coerce
         # when a target column supplies the type, it fails for `<=>` in search.
@@ -61,8 +69,8 @@ class KbRepository:
                     """,
                     (
                         doc.external_id,
-                        doc.title,
-                        doc.body,
+                        self._cipher.encrypt(doc.title),
+                        self._cipher.encrypt(doc.body),
                         doc.category,
                         vector,
                     ),
@@ -72,7 +80,7 @@ class KbRepository:
         return KbDocumentOut(
             id=str(row[0]),
             external_id=row[1],
-            title=row[2],
+            title=self._cipher.decrypt(row[2]),
             category=row[3],
             updated_at=row[4],
         )
@@ -105,8 +113,8 @@ class KbRepository:
             KbSearchHit(
                 id=str(row[0]),
                 external_id=row[1],
-                title=row[2],
-                body=row[3],
+                title=self._cipher.decrypt(row[2]),
+                body=self._cipher.decrypt(row[3]),
                 category=row[4],
                 score=float(row[5]),
             )

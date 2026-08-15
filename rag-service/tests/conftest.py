@@ -24,12 +24,16 @@ from psycopg_pool import AsyncConnectionPool
 from testcontainers.postgres import PostgresContainer
 
 from ticketmind_rag.config import Settings
+from ticketmind_rag.crypto import FieldCipher
 from ticketmind_rag.db import ensure_schema
 from ticketmind_rag.embeddings import FakeEmbedder
 from ticketmind_rag.llm import FakeChat
 from ticketmind_rag.main import create_app
 
 INTERNAL_KEY = "test-internal-key"
+# Fixed 32-byte key, base64-encoded, so encrypted columns round-trip
+# deterministically. Matches the one in the backend's test profile.
+ENCRYPTION_KEY = "dGVzdC1vbmx5LWZpZWxkLWtleS0zMi1ieXRlcyEhISE="
 EMBED_DIM = 8  # small dimensions keep test vectors readable in failure output
 
 
@@ -86,11 +90,17 @@ def settings(pg_container: PostgresContainer) -> Settings:
     return Settings(
         DATABASE_URL=_dsn(pg_container),
         RAG_INTERNAL_API_KEY=INTERNAL_KEY,
+        APP_ENCRYPTION_KEY=ENCRYPTION_KEY,
         ANTHROPIC_API_KEY="test-anthropic-key",
         VOYAGE_API_KEY="test-voyage-key",
         RAG_EMBEDDING_DIM=EMBED_DIM,
         RAG_RETRIEVAL_K=3,
     )  # type: ignore[call-arg]
+
+
+@pytest.fixture
+def cipher() -> FieldCipher:
+    return FieldCipher.from_base64(ENCRYPTION_KEY)
 
 
 @pytest.fixture
@@ -115,12 +125,14 @@ async def client(
     pool: AsyncConnectionPool,
     fake_embedder: FakeEmbedder,
     fake_chat_json: str,
+    cipher: FieldCipher,
 ) -> AsyncIterator[AsyncClient]:
     app = create_app()
     app.state.settings = settings
     app.state.pool = pool
     app.state.embedder = fake_embedder
     app.state.chat = FakeChat(canned=fake_chat_json)
+    app.state.cipher = cipher
     app.state._owns_pool = False
     async with LifespanManager(app):
         transport = ASGITransport(app=app)

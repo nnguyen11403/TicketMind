@@ -3,6 +3,7 @@ from httpx import AsyncClient
 from psycopg_pool import AsyncConnectionPool
 
 from tests.conftest import EMBED_DIM, auth
+from ticketmind_rag.crypto import FieldCipher
 from ticketmind_rag.embeddings import FakeEmbedder
 from ticketmind_rag.kb import KbRepository
 from ticketmind_rag.schemas import KbDocumentIn
@@ -10,9 +11,9 @@ from ticketmind_rag.schemas import KbDocumentIn
 
 @pytest.mark.asyncio
 async def test_upsert_document_persists_row(
-    pool: AsyncConnectionPool, fake_embedder: FakeEmbedder
+    pool: AsyncConnectionPool, fake_embedder: FakeEmbedder, cipher: FieldCipher
 ) -> None:
-    repo = KbRepository(pool=pool, embedder=fake_embedder)
+    repo = KbRepository(pool=pool, embedder=fake_embedder, cipher=cipher)
     out = await repo.upsert(
         KbDocumentIn(external_id="kb-1", title="Refunds", body="How to refund", category="billing")
     )
@@ -23,9 +24,9 @@ async def test_upsert_document_persists_row(
 
 @pytest.mark.asyncio
 async def test_upsert_document_updates_on_conflict(
-    pool: AsyncConnectionPool, fake_embedder: FakeEmbedder
+    pool: AsyncConnectionPool, fake_embedder: FakeEmbedder, cipher: FieldCipher
 ) -> None:
-    repo = KbRepository(pool=pool, embedder=fake_embedder)
+    repo = KbRepository(pool=pool, embedder=fake_embedder, cipher=cipher)
     first = await repo.upsert(KbDocumentIn(external_id="kb-1", title="Old", body="Old body"))
     second = await repo.upsert(KbDocumentIn(external_id="kb-1", title="New", body="New body"))
     # Same external_id → same PK, updated fields.
@@ -35,9 +36,9 @@ async def test_upsert_document_updates_on_conflict(
 
 @pytest.mark.asyncio
 async def test_search_returns_closest_first(
-    pool: AsyncConnectionPool, fake_embedder: FakeEmbedder
+    pool: AsyncConnectionPool, fake_embedder: FakeEmbedder, cipher: FieldCipher
 ) -> None:
-    repo = KbRepository(pool=pool, embedder=fake_embedder)
+    repo = KbRepository(pool=pool, embedder=fake_embedder, cipher=cipher)
     await repo.upsert(KbDocumentIn(external_id="kb-a", title="alpha", body="Alpha body"))
     await repo.upsert(KbDocumentIn(external_id="kb-b", title="bravo", body="Bravo body"))
     hits = await repo.search("alpha", k=2)
@@ -50,9 +51,9 @@ async def test_search_returns_closest_first(
 
 @pytest.mark.asyncio
 async def test_search_k_zero_short_circuits(
-    pool: AsyncConnectionPool, fake_embedder: FakeEmbedder
+    pool: AsyncConnectionPool, fake_embedder: FakeEmbedder, cipher: FieldCipher
 ) -> None:
-    repo = KbRepository(pool=pool, embedder=fake_embedder)
+    repo = KbRepository(pool=pool, embedder=fake_embedder, cipher=cipher)
     await repo.upsert(KbDocumentIn(external_id="kb-1", title="t", body="b"))
     assert await repo.search("anything", k=0) == []
 

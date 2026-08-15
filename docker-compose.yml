@@ -21,7 +21,11 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      # Bound to the loopback interface, not 0.0.0.0. Every service that needs
+      # Postgres reaches it over the compose network; this mapping exists only
+      # so a developer can attach psql. Published broadly it would put the
+      # owning credential on the host's public interfaces.
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -45,9 +49,20 @@ services:
       DB_HOST: postgres
       DB_PORT: 5432
       POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      # Flyway keeps the owning credential: V3 creates the roles below and
+      # grants their privileges, so it cannot run as one of them.
+      SPRING_FLYWAY_USER: ${POSTGRES_USER}
+      SPRING_FLYWAY_PASSWORD: ${POSTGRES_PASSWORD}
+      # Everything after the migration runs as this unprivileged role, which
+      # owns no table and has no BYPASSRLS — that is what puts the V3 policies
+      # in force instead of leaving them decorative.
+      APP_DB_USER: ticketmind_app
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD}
+      # Handed to Flyway as a placeholder so V3 can provision the RAG
+      # service's own login role in the same migration.
+      RAG_DB_PASSWORD: ${RAG_DB_PASSWORD}
       JWT_SECRET: ${JWT_SECRET}
+      APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY}
       # Must match the origin the browser actually loads the SPA from. If you
       # change FRONTEND_PORT, change this too or every API call is blocked.
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000}
@@ -74,8 +89,16 @@ services:
       backend:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      # Its own role, created by the backend's V3 migration — which is a second
+      # reason this service waits on `backend` rather than on `postgres`. It
+      # can create and own kb_documents and nothing else: no read on tickets,
+      # users, or refresh_tokens. This is the container that hands text to a
+      # third-party model, so it is the one whose reach matters most.
+      DATABASE_URL: postgresql://ticketmind_rag:${RAG_DB_PASSWORD}@postgres:5432/${POSTGRES_DB}
       RAG_INTERNAL_API_KEY: ${RAG_INTERNAL_API_KEY}
+      # Same key the backend uses, so the mirrored ticket text is encrypted
+      # here exactly as it is in `tickets`.
+      APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
       RAG_CHAT_MODEL: ${RAG_CHAT_MODEL:-claude-opus-5}
       VOYAGE_API_KEY: ${VOYAGE_API_KEY}

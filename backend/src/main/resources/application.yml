@@ -5,8 +5,12 @@ spring:
     default: dev
   datasource:
     url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${POSTGRES_DB:ticketmind}
-    username: ${POSTGRES_USER:ticketmind}
-    password: ${POSTGRES_PASSWORD:}
+    # The runtime credential is the unprivileged role V3 creates, not the
+    # owner. Falling back to the owner keeps a bare `mvnw spring-boot:run`
+    # working against a database that has not been migrated yet; compose and
+    # any real deployment set APP_DB_USER.
+    username: ${APP_DB_USER:${POSTGRES_USER:ticketmind}}
+    password: ${APP_DB_PASSWORD:${POSTGRES_PASSWORD:}}
     hikari:
       maximum-pool-size: 10
       minimum-idle: 2
@@ -25,6 +29,14 @@ spring:
     enabled: true
     locations: classpath:db/migration
     baseline-on-migrate: true
+    # V3 creates the login roles and needs their passwords as literals. Flyway
+    # substitutes these textually, so both must be free of quote characters —
+    # generate with `openssl rand -hex 32`. No defaults: an unset value fails
+    # the migration rather than provisioning a role with a password that is
+    # sitting in the source tree.
+    placeholders:
+      app_db_password: ${APP_DB_PASSWORD}
+      rag_db_password: ${RAG_DB_PASSWORD}
 
 server:
   port: ${BACKEND_PORT:8080}
@@ -53,6 +65,25 @@ management:
       enabled: false
 
 app:
+  security:
+    # Refuse any request that did not arrive over TLS (read from
+    # X-Forwarded-Proto, since TLS terminates at the proxy). Actuator is exempt
+    # so the container healthcheck can probe over loopback. The dev and test
+    # profiles turn this off.
+    require-https: ${REQUIRE_HTTPS:true}
+  crypto:
+    # base64-encoded 256-bit key for column-level encryption. No default, for
+    # the same reason as app.jwt.secret. Generate with: openssl rand -base64 32
+    # Losing it loses every encrypted ticket body — back it up with the
+    # database, not in it.
+    field-key: ${APP_ENCRYPTION_KEY}
+  rls:
+    # Every runtime connection switches into this role and stamps the caller's
+    # identity into app.user_id / app.user_role, which is what the V3 policies
+    # read. Turning this off leaves those variables unset, and the policies
+    # then deny everything — it is a diagnostic switch, not a way to opt out.
+    enabled: true
+    app-role: ticketmind_app
   jwt:
     # Must be at least 32 bytes (256 bits) when decoded. Generate with:
     #   openssl rand -base64 64

@@ -2,6 +2,7 @@ import pytest
 from httpx import AsyncClient
 
 from tests.conftest import auth
+from ticketmind_rag.crypto import FieldCipher
 from ticketmind_rag.errors import UpstreamError
 from ticketmind_rag.kb import KbRepository
 from ticketmind_rag.llm import FakeChat
@@ -10,8 +11,8 @@ from ticketmind_rag.triage import TriageError, TriageService, _extract_json
 
 
 @pytest.mark.asyncio
-async def test_triage_service_returns_parsed_response(pool, fake_embedder) -> None:
-    repo = KbRepository(pool=pool, embedder=fake_embedder)
+async def test_triage_service_returns_parsed_response(pool, fake_embedder, cipher) -> None:
+    repo = KbRepository(pool=pool, embedder=fake_embedder, cipher=cipher)
     await repo.upsert(KbDocumentIn(external_id="kb-1", title="Double charge", body="Refund policy"))
     chat = FakeChat(
         canned=(
@@ -34,8 +35,8 @@ async def test_triage_service_returns_parsed_response(pool, fake_embedder) -> No
 
 
 @pytest.mark.asyncio
-async def test_triage_service_lowercase_priority_is_normalised(pool, fake_embedder) -> None:
-    repo = KbRepository(pool=pool, embedder=fake_embedder)
+async def test_triage_service_lowercase_priority_is_normalised(pool, fake_embedder, cipher) -> None:
+    repo = KbRepository(pool=pool, embedder=fake_embedder, cipher=cipher)
     chat = FakeChat(
         canned=(
             '{"category":"general","priority":"low",'
@@ -48,8 +49,8 @@ async def test_triage_service_lowercase_priority_is_normalised(pool, fake_embedd
 
 
 @pytest.mark.asyncio
-async def test_triage_service_rejects_invalid_priority(pool, fake_embedder) -> None:
-    repo = KbRepository(pool=pool, embedder=fake_embedder)
+async def test_triage_service_rejects_invalid_priority(pool, fake_embedder, cipher) -> None:
+    repo = KbRepository(pool=pool, embedder=fake_embedder, cipher=cipher)
     chat = FakeChat(
         canned=(
             '{"category":"general","priority":"WHENEVER",'
@@ -62,8 +63,8 @@ async def test_triage_service_rejects_invalid_priority(pool, fake_embedder) -> N
 
 
 @pytest.mark.asyncio
-async def test_triage_service_ignores_malformed_citations(pool, fake_embedder) -> None:
-    repo = KbRepository(pool=pool, embedder=fake_embedder)
+async def test_triage_service_ignores_malformed_citations(pool, fake_embedder, cipher) -> None:
+    repo = KbRepository(pool=pool, embedder=fake_embedder, cipher=cipher)
     chat = FakeChat(
         canned=(
             '{"category":"c","priority":"MEDIUM","summary":"s",'
@@ -137,7 +138,7 @@ def test_kb_search_hit_used_in_score_lookup() -> None:
     assert hit.score == 0.5
 
 
-async def test_provider_failure_is_502_not_500(client: AsyncClient) -> None:
+async def test_provider_failure_is_502_not_500(client: AsyncClient, cipher: FieldCipher) -> None:
     """A dead embedding provider must look like an upstream fault, not a crash.
 
     Before this, a missing VOYAGE_API_KEY produced a 500 with a stack trace in
@@ -156,7 +157,7 @@ async def test_provider_failure_is_502_not_500(client: AsyncClient) -> None:
 
     transport = client._transport  # type: ignore[attr-defined]
     app = transport.app
-    app.state.kb = KbRepository(pool=app.state.pool, embedder=DeadEmbedder())
+    app.state.kb = KbRepository(pool=app.state.pool, embedder=DeadEmbedder(), cipher=cipher)
     app.state.triage = TriageService(repo=app.state.kb, chat=app.state.chat, retrieval_k=1)
 
     response = await client.post(
@@ -168,7 +169,9 @@ async def test_provider_failure_is_502_not_500(client: AsyncClient) -> None:
     assert response.json() == {"detail": "upstream_error"}
 
 
-async def test_kb_upsert_also_reports_provider_failure_as_502(client: AsyncClient) -> None:
+async def test_kb_upsert_also_reports_provider_failure_as_502(
+    client: AsyncClient, cipher: FieldCipher
+) -> None:
     class DeadEmbedder:
         dimension = 8
 
@@ -180,7 +183,7 @@ async def test_kb_upsert_also_reports_provider_failure_as_502(client: AsyncClien
 
     transport = client._transport  # type: ignore[attr-defined]
     app = transport.app
-    app.state.kb = KbRepository(pool=app.state.pool, embedder=DeadEmbedder())
+    app.state.kb = KbRepository(pool=app.state.pool, embedder=DeadEmbedder(), cipher=cipher)
 
     response = await client.post(
         "/kb/documents",

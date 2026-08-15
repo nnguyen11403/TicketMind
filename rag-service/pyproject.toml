@@ -16,6 +16,9 @@ dependencies = [
     "langchain-core>=0.3.100",
     "voyageai>=0.3.6",
     "httpx>=0.28.0",
+    # AES-GCM for kb_documents. Same envelope and key as the backend's
+    # FieldCipher, so either service can read what the other wrote.
+    "cryptography>=44.0.0",
 ]
 
 [dependency-groups]

@@ -20,10 +20,31 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
 	private static final String BEARER_PREFIX = "Bearer ";
 
+	/**
+	 * The credential-issuing endpoints, which are {@code permitAll} and must
+	 * behave identically whether or not the caller happens to be carrying a
+	 * token. Since row-level security derives the database session identity
+	 * from the principal, seating one here would run registration and login
+	 * under whoever the stale token names instead of as SYSTEM — and those
+	 * paths have to read and write user rows before anyone is authenticated.
+	 * {@code /auth/me} is not in the list; it is the one authenticated
+	 * endpoint on this controller.
+	 */
+	private static final List<String> ANONYMOUS_PATHS =
+			List.of("/auth/register", "/auth/login", "/auth/refresh", "/auth/logout");
+
 	private final JwtService jwtService;
 
 	public JwtAuthenticationFilter(JwtService jwtService) {
 		this.jwtService = jwtService;
+	}
+
+	@Override
+	protected boolean shouldNotFilter(HttpServletRequest request) {
+		// See HttpsEnforcementFilter: getServletPath() depends on the container's
+		// servlet mapping and is empty under MockMvc.
+		return ANONYMOUS_PATHS.contains(
+				request.getRequestURI().substring(request.getContextPath().length()));
 	}
 
 	@Override

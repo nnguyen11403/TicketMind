@@ -16,6 +16,17 @@
 #   RAG_URL       (default http://localhost:8000)
 #   FRONTEND_URL  (default http://localhost:3000)
 #   RAG_KEY       (default from $RAG_INTERNAL_API_KEY)
+#
+# The database-level checks in section 7 additionally need POSTGRES_USER,
+# POSTGRES_PASSWORD, POSTGRES_DB and RAG_DB_PASSWORD. Sourcing the same .env
+# the stack was started from is the intended way to supply them:
+#
+#   set -a; . ./.env; set +a; ./scripts/smoke-test.sh
+#
+# Run this against a stack on the `dev` profile, which is what CI does. Outside
+# dev the backend refuses plain http with 403 https_required, so every check
+# here would fail unless the run goes through the TLS-terminating proxy that
+# such a deployment is supposed to sit behind.
 
 set -uo pipefail
 
@@ -23,6 +34,12 @@ BACKEND_URL="${BACKEND_URL:-http://localhost:8080}"
 RAG_URL="${RAG_URL:-http://localhost:8000}"
 FRONTEND_URL="${FRONTEND_URL:-http://localhost:3000}"
 RAG_KEY="${RAG_KEY:-${RAG_INTERNAL_API_KEY:-}}"
+# Defaulted so `set -u` does not abort the run when only the HTTP checks are
+# wanted; section 7 skips itself when they are empty.
+POSTGRES_USER="${POSTGRES_USER:-}"
+POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-}"
+POSTGRES_DB="${POSTGRES_DB:-}"
+RAG_DB_PASSWORD="${RAG_DB_PASSWORD:-}"
 
 pass=0
 fail=0
@@ -30,6 +47,15 @@ fail=0
 ok()   { printf '  \033[32mPASS\033[0m  %s\n' "$1"; pass=$((pass + 1)); }
 bad()  { printf '  \033[31mFAIL\033[0m  %s\n' "$1"; fail=$((fail + 1)); }
 note() { printf '  \033[33mNOTE\033[0m  %s\n' "$1"; }
+
+# A here-string rather than `printf … | grep -q`: grep -q exits on the first
+# match, the writer takes SIGPIPE, and `pipefail` then reports the whole
+# pipeline as failed. It only bites on responses large enough that the writer
+# has not finished, which is how a header check that passes on a small response
+# fails on a bigger one.
+has_header() {
+	grep -qi "^$1:" <<<"$2"
+}
 
 # Extracts the FIRST occurrence of a string field. Deliberately not sed with a
 # leading `.*`: that is greedy, so on a TicketResponse it returns submitter.id
@@ -234,6 +260,86 @@ evil=$(curl -s -i -X OPTIONS "$BACKEND_URL/tickets" \
 printf '%s' "$evil" | grep -qi '^access-control-allow-origin' \
 	&& bad "an untrusted origin was granted CORS access" \
 	|| ok "untrusted origin is refused"
+
+echo
+echo "=== 6. security headers ==="
+# Header configuration is the classic thing that is correct in the config file
+# and absent from the response, because a proxy stripped it or the directive
+# landed in a block that does not apply to this location.
+fe_headers=$(curl -s -i "$FRONTEND_URL/" 2>/dev/null)
+for h in "content-security-policy" "x-content-type-options" "x-frame-options" \
+	"referrer-policy" "strict-transport-security" "permissions-policy"; do
+	has_header "$h" "$fe_headers" \
+		&& ok "frontend sends $h" \
+		|| bad "frontend is missing $h"
+done
+grep -qiE "^content-security-policy:.*script-src[^;]*unsafe-(inline|eval)" <<<"$fe_headers" \
+	&& bad "the frontend CSP allows unsafe script sources" \
+	|| ok "CSP script-src has no unsafe-inline / unsafe-eval"
+
+api_headers=$(curl -s -i "$BACKEND_URL/actuator/health" 2>/dev/null)
+for h in "x-content-type-options" "x-frame-options" "referrer-policy"; do
+	has_header "$h" "$api_headers" \
+		&& ok "backend sends $h" \
+		|| bad "backend is missing $h"
+done
+# HSTS is emitted only on a secure request, which is exactly right: over plain
+# http a browser ignores it anyway. Assert it appears once the proxy header says
+# the user's hop was TLS.
+https_headers=$(curl -s -i "$BACKEND_URL/actuator/health" -H 'X-Forwarded-Proto: https' 2>/dev/null)
+has_header "strict-transport-security" "$https_headers" \
+	&& ok "backend sends HSTS on a forwarded-https request" \
+	|| bad "backend did not send HSTS even with X-Forwarded-Proto: https"
+
+# An http request that a proxy forwarded must be redirected, not answered.
+redirect=$(curl -s -o /dev/null -w '%{http_code}' "$FRONTEND_URL/" -H 'X-Forwarded-Proto: http')
+[ "$redirect" = "301" ] && ok "forwarded http is redirected to https (301)" \
+	|| bad "forwarded http returned $redirect, the https redirect is not in force"
+
+echo
+echo "=== 7. tenant isolation and encryption at rest ==="
+if [ -n "${token:-}" ] && [ -n "${ticket_id:-}" ]; then
+	other_email="smoke-other-${suffix}@example.com"
+	other=$(curl -s -X POST "$BACKEND_URL/auth/register" -H 'Content-Type: application/json' \
+		-d "{\"email\":\"$other_email\",\"password\":\"smoke-test-password-2\",\"displayName\":\"Other\"}")
+	other_token=$(json_first "$other" accessToken)
+	if [ -n "$other_token" ]; then
+		code=$(curl -s -o /dev/null -w '%{http_code}' "$BACKEND_URL/tickets/$ticket_id" \
+			-H "Authorization: Bearer $other_token")
+		[ "$code" = "404" ] && ok "another user cannot read the ticket (404)" \
+			|| bad "another user got $code on someone else's ticket (expected 404)"
+	else
+		note "could not register a second user (rate limit), skipping the isolation check"
+	fi
+fi
+
+# The checks that need to look at the database itself. Only available where the
+# compose stack is local, which covers CI and a developer's machine.
+if [ -n "$POSTGRES_PASSWORD" ] && [ -n "$RAG_DB_PASSWORD" ] \
+	&& command -v docker >/dev/null 2>&1 && docker compose ps postgres >/dev/null 2>&1; then
+	psql_owner() { docker compose exec -T -e PGPASSWORD="$POSTGRES_PASSWORD" postgres \
+		psql -qtAX -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "$1" 2>/dev/null; }
+
+	plaintext=$(psql_owner "SELECT count(*) FROM tickets WHERE description NOT LIKE 'v1:%'")
+	[ "$plaintext" = "0" ] && ok "every ticket description is stored as ciphertext" \
+		|| bad "$plaintext ticket description(s) are in plaintext on disk"
+
+	rls=$(psql_owner "SELECT count(*) FROM pg_tables WHERE schemaname='public' AND rowsecurity AND tablename IN ('tickets','ticket_history','users','refresh_tokens')")
+	[ "$rls" = "4" ] && ok "row-level security is enabled on all four domain tables" \
+		|| bad "only $rls of 4 domain tables have RLS enabled"
+
+	# The RAG container holds this credential, so this is the blast radius of a
+	# compromise there.
+	denied=$(docker compose exec -T -e PGPASSWORD="$RAG_DB_PASSWORD" postgres \
+		psql -qtAX -U ticketmind_rag -d "$POSTGRES_DB" -c 'SELECT count(*) FROM tickets' 2>&1)
+	case "$denied" in
+		*"permission denied"*) ok "the RAG role cannot read tickets" ;;
+		*) bad "the RAG role could query tickets: $denied" ;;
+	esac
+else
+	note "no database credentials or no local compose stack, skipping the at-rest and RLS checks"
+	note "run as: set -a; . ./.env; set +a; ./scripts/smoke-test.sh"
+fi
 
 echo
 echo "=========================================="

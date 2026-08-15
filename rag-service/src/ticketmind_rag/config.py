@@ -28,6 +28,11 @@ class Settings(BaseSettings):
 
     internal_api_key: SecretStr = Field(alias="RAG_INTERNAL_API_KEY")
 
+    # Shared with the Spring backend: the two services read and write the same
+    # envelope over the same key, so a resolved ticket mirrored into the
+    # knowledge base is protected exactly as it is in `tickets`.
+    encryption_key: SecretStr = Field(alias="APP_ENCRYPTION_KEY")
+
     anthropic_api_key: SecretStr = Field(alias="ANTHROPIC_API_KEY")
     chat_model: str = Field(default="claude-opus-5", alias="RAG_CHAT_MODEL")
 

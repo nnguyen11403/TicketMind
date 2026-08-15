@@ -1,11 +1,26 @@
 spring:
   flyway:
     enabled: true
+    # Test-only role passwords. Testcontainers connects as the superuser it
+    # provisions, so nothing ever authenticates as these roles; the app role is
+    # reached with SET ROLE, which is what makes the suite exercise the real
+    # policies rather than the owner's exemption from them.
+    placeholders:
+      app_db_password: test-only-app-password
+      rag_db_password: test-only-rag-password
   jpa:
     hibernate:
       ddl-auto: validate
 
 app:
+  security:
+    # Local runs are plain http://localhost; refusing them would make every
+    # endpoint unreachable.
+    require-https: false
+  crypto:
+    # Fixed 32-byte key so encrypted columns round-trip deterministically.
+    # Real deployments inject APP_ENCRYPTION_KEY via environment.
+    field-key: "dGVzdC1vbmx5LWZpZWxkLWtleS0zMi1ieXRlcyEhISE="
   rag:
     # Off by default so the existing suite never reaches for a RAG service.
     # The tests that exercise the integration flip this on explicitly and
