@@ -30,6 +30,14 @@
 		<java.version>21</java.version>
 		<jjwt.version>0.12.6</jjwt.version>
 		<bucket4j.version>8.10.1</bucket4j.version>
+		<!--
+			Overrides the 42.7.11 that spring-boot-starter-parent 4.1.0 manages.
+			CVE-2026-54291: a SCRAM-SHA-256-PLUS downgrade lets an attacker in the
+			middle strip channel binding, which is the exact protection standing
+			between the network and the database credentials. Remove this override
+			once the Boot parent manages 42.7.12 or later.
+		-->
+		<postgresql.version>42.7.12</postgresql.version>
 	</properties>
 	<dependencies>
 		<dependency>

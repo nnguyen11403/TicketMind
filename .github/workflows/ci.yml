@@ -87,12 +87,28 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Trivy covers all three ecosystems from the lockfiles in one pass and
-      # needs no NVD API key, which is what rules out the OWASP
-      # dependency-check plugin here — it is the only practical way to get the
-      # Maven tree scanned on every run rather than nightly.
+      # npm and uv ship complete lockfiles, so Trivy resolves those offline.
+      # Maven does not: pom.xml only names a parent, and the full dependency
+      # tree lives in a chain of BOMs Trivy would otherwise fetch from Maven
+      # Central on every run. From shared CI egress that earns a 429 with a
+      # 30-minute Retry-After, which fails the job for a reason that has
+      # nothing to do with any vulnerability. Populating ~/.m2 first and then
+      # scanning offline is Trivy's own recommended fix.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+      - name: Populate the Maven cache for Trivy
+        working-directory: backend
+        run: ./mvnw -B -ntp dependency:go-offline
+
       - name: Scan lockfiles
         uses: aquasecurity/trivy-action@0.28.0
+        env:
+          # Resolve the POM hierarchy from ~/.m2 rather than over the network.
+          # Does not affect the vulnerability database, which still updates.
+          TRIVY_OFFLINE_SCAN: "true"
         with:
           scan-type: fs
           scan-ref: .
